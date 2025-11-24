@@ -19,21 +19,34 @@ export interface InterviewContextData {
   candidateName: string;
 }
 
+export type AnswerQuality = 'Basic' | 'Intermediate' | 'Expert';
+export type IntegrityStatus = 'Clean' | 'Suspicious';
+export type QuestionComplexity = 'Basic' | 'Intermediate' | 'Expert';
+
 export interface AnalysisMetrics {
-  technicalAccuracy: number;
-  communicationClarity: number;
-  relevance: number;
-  sentiment: 'Positive' | 'Neutral' | 'Negative';
+  technicalAccuracy: number; // 0-100
+  communicationClarity: number; // 0-100
+  relevance: number; // 0-100
+  sentiment: 'Positive' | 'Neutral' | 'Negative' | 'Anxious' | 'Confident' | 'Defensive';
   deceptionProbability: number; // 0-100
+  paceOfSpeech: 'Slow' | 'Normal' | 'Fast' | 'Rushed';
+  starMethodAdherence: boolean;
   keySkillsDemonstrated: string[];
   improvementAreas: string[];
+  // New Advanced Metrics
+  integrity: {
+    status: IntegrityStatus;
+    flaggedReason?: string; // e.g., "Eyes darting off-screen", "Robotic tone"
+  };
+  answerQuality: AnswerQuality;
 }
 
 export interface InterviewTurn {
   id: number;
   question: string;
-  answerAudioBase64?: string; // Storing base64 of audio blob
-  answerVideoFrameBase64?: string; // Snapshot of video for facial analysis
+  questionComplexity: QuestionComplexity;
+  answerAudioBase64?: string; 
+  answerVideoFrameBase64?: string;
   transcript: string;
   analysis: AnalysisMetrics;
   interviewerNotes?: string;
@@ -50,8 +63,16 @@ export interface ReportData {
     technical: number;
   };
   summary: string;
+  psychologicalProfile: string;
   recommendation: 'HIRE' | 'NO_HIRE' | 'STRONG_HIRE' | 'MAYBE';
   turns: InterviewTurn[];
+  // New Report Metrics
+  integrityScore: number; // 100 = Honest, 0 = Cheated
+  skillDepthBreakdown: {
+    basic: number;
+    intermediate: number;
+    expert: number;
+  };
 }
 
 export interface ChatMessage {

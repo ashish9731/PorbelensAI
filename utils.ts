@@ -32,11 +32,11 @@ export const processFile = async (file: File): Promise<FileData> => {
     const base64 = await fileToBase64(file);
     return {
       name: file.name,
-      type: file.type,
+      type: 'application/pdf', // Explicit MIME type for Gemini
       base64: base64
     };
   } 
-  // Handle Text
+  // Handle Text-based files
   else if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
     const text = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -50,6 +50,15 @@ export const processFile = async (file: File): Promise<FileData> => {
       textContent: text
     };
   }
-  
-  throw new Error(`Unsupported file type: ${file.name}. Please upload PDF or Text files (.txt, .md).`);
+  // Fallback for Word docs or others - convert to Base64 but warn about support
+  else {
+     // Try to send as generic data, though Gemini prefers PDF/Image/Audio/Video/Text
+     // We will treat unknown as base64 for now
+     const base64 = await fileToBase64(file);
+     return {
+         name: file.name,
+         type: file.type || 'application/octet-stream',
+         base64: base64
+     };
+  }
 };
