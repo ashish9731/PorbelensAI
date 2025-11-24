@@ -1,0 +1,9 @@
+{
+  "name": "ProbeLensAI",
+  "description": "An advanced, AI-driven technical interview platform that analyzes candidate responses in real-time using multimodal inputs.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ]
+}
