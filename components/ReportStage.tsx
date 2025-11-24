@@ -18,11 +18,18 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
 
   useEffect(() => {
     const fetchReport = async () => {
+      // Ensure we have all the data before generating the report
+      if (history.length === 0) {
+        console.warn("No interview history to analyze");
+        return;
+      }
+      
       try {
         const data = await generateFinalReport(history, context);
         setReport(data);
       } catch (e) {
         console.error("Failed to generate report", e);
+        alert("Failed to generate the final report. Please check your internet connection and API key.");
       }
     };
     fetchReport();

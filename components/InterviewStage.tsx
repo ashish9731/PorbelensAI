@@ -73,8 +73,9 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
       setCurrentQuestion(result.nextQuestion);
     } catch (err) {
       console.error("Analysis failed", err);
-      // Fallback if AI fails (network/api)
-      setCurrentQuestion("The audio wasn't clear. Please ask the candidate to elaborate on the last point.");
+      // Show error to user instead of faking a response
+      alert("Failed to analyze the response. Please check your internet connection and API key. Error: " + (err as Error).message);
+      // Don't change the current question so the interviewer can retry
     } finally {
       setProcessingAnswer(false);
     }

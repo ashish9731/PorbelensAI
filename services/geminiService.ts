@@ -45,19 +45,25 @@ export const analyzeAndNextQuestion = async (
   - Last Question Asked: "${lastQuestion}"
   - The user (Interviewer) has recorded the Candidate's response (Audio + Video Frame).
   
+  DOCUMENTS PROVIDED:
+  - JOB DESCRIPTION: Contains required skills, responsibilities, and qualifications
+  - RESUME: Candidate's experience, skills, and background
+  - KNOWLEDGE BASE: Additional technical information for deeper questioning
+  
   YOUR TASKS:
   1. TRANSCRIPT: Transcribe the audio accurately.
   2. DEEP OBSERVATION:
      - Analyze the audio for tone, confidence, and hesitation.
      - Analyze the video frame for facial expressions (stress, confusion, engagement).
-     - Cross-check the content against the Job Description (JD) and Resume provided (if any).
+     - Cross-check the content against the Job Description (JD) and Resume provided.
      - Detect any "Deception" or "Canned/ChatGPT-like" answers.
   3. GENERATE NEXT QUESTION:
      - MUST be dynamic based on the answer. DO NOT use pre-generated lists.
-     - If the answer was technical, drill deeper into the *how* and *why*.
-     - If the answer was vague, ask for a specific real-world example.
-     - If the answer was perfect, move to a different required skill from the JD.
+     - If the answer was technical, drill deeper into the *how* and *why* using the KNOWLEDGE BASE for technical depth.
+     - If the answer was vague, ask for a specific real-world example from their RESUME.
+     - If the answer was perfect, move to a different required skill from the JOB DESCRIPTION.
      - Keep the question professional but challenging.
+     - ALWAYS reference specific skills or experiences from the provided documents.
   
   OUTPUT FORMAT: JSON Only.
   `;
@@ -69,6 +75,9 @@ export const analyzeAndNextQuestion = async (
   }
   if (context.resume?.textContent) {
       parts.push({ text: `RESUME: ${context.resume.textContent.substring(0, 2000)}` });
+  }
+  if (context.knowledgeBase?.textContent) {
+      parts.push({ text: `KNOWLEDGE BASE: ${context.knowledgeBase.textContent.substring(0, 2000)}` });
   }
 
   parts.push({ inlineData: { mimeType: "audio/wav", data: audioBase64 } });
@@ -123,22 +132,26 @@ export const generateFinalReport = async (
   const prompt = `
     Generate a comprehensive "Interviewer's Final Decision Report" for candidate ${context.candidateName}.
     
+    DOCUMENTS PROVIDED FOR CONTEXT:
+    JOB DESCRIPTION: ${context.jobDescription?.textContent?.substring(0, 1000) || 'Not provided'}
+    RESUME: ${context.resume?.textContent?.substring(0, 1000) || 'Not provided'}
+    
     INPUT DATA:
     ${conversationLog}
     
     INSTRUCTIONS:
-    - Analyze the ENTIRE session.
+    - Analyze the ENTIRE session in the context of the provided JOB DESCRIPTION and RESUME.
     - Evaluate based on these specific pillars:
-      1. Subject Knowledge (Depth of expertise)
-      2. Behavioral (Culture fit, attitude)
-      3. Functional (Practical application of skills)
-      4. Non-Functional (Scalability, performance mindset, security awareness)
-      5. Communication (Clarity, articulation)
-      6. Technical (Coding/System Design accuracy)
+      1. Subject Knowledge (Depth of expertise matching job requirements)
+      2. Behavioral (Culture fit, attitude based on resume experiences)
+      3. Functional (Practical application of skills required by the job)
+      4. Non-Functional (Scalability, performance mindset, security awareness as needed by the role)
+      5. Communication (Clarity, articulation in discussing resume experiences)
+      6. Technical (Coding/System Design accuracy matching job requirements)
     
-    - Provide an "Executive Summary" suitable for a Hiring Manager.
-    - Provide a "Recommendation" (Hire/No Hire).
-    - Calculate an "Overall Score" (0-100).
+    - Provide an "Executive Summary" suitable for a Hiring Manager that references specific examples from the conversation and documents.
+    - Provide a "Recommendation" (Hire/No Hire) with clear justification based on job requirements.
+    - Calculate an "Overall Score" (0-100) based on how well the candidate matches the job requirements.
     
     OUTPUT: JSON Only.
   `;
