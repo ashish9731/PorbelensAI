@@ -53,12 +53,3 @@ export const Icons = {
   RefreshCw,
   Activity
 };
-
-export const MOCK_CHART_DATA = [
-  { subject: 'Technical', A: 120, fullMark: 150 },
-  { subject: 'Communication', A: 98, fullMark: 150 },
-  { subject: 'Problem Solving', A: 86, fullMark: 150 },
-  { subject: 'Experience', A: 99, fullMark: 150 },
-  { subject: 'Culture Fit', A: 85, fullMark: 150 },
-  { subject: 'Adaptability', A: 65, fullMark: 150 },
-];

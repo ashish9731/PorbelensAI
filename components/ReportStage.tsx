@@ -39,6 +39,27 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
     );
   }
 
+  // No Data State - Prevents Fake Empty Reports
+  if (report.overallScore === 0 && report.turns.length === 0) {
+      return (
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center transition-colors p-6 text-center">
+            <div className="bg-red-100 dark:bg-red-900/20 p-6 rounded-full mb-6">
+                 <Icons.AlertCircle className="w-16 h-16 text-red-500 dark:text-red-400" />
+            </div>
+            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Interview Terminated Without Data</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300 max-w-md mb-8">
+                {report.summary || "No valid candidate responses were recorded. Analysis could not be performed."}
+            </p>
+            <button 
+                onClick={() => setStage(AppStage.HOME)}
+                className="px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:opacity-90 transition"
+            >
+                Return to Home
+            </button>
+        </div>
+      );
+  }
+
   const radarData = [
     { subject: 'Technical', A: report.categoryScores.technical, fullMark: 100 },
     { subject: 'Subject Knw.', A: report.categoryScores.subjectKnowledge, fullMark: 100 },

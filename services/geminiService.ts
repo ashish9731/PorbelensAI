@@ -43,7 +43,6 @@ export const generateFastNextQuestion = async (
   const ai = getAI();
   const model = "gemini-2.5-flash"; // High speed model
 
-  const recentHistory = history.slice(-2);
   const lastTurn = history[history.length - 1];
   const lastQuestion = lastTurn ? lastTurn.question : "Tell me about yourself in brief.";
   const lastComplexity = lastTurn ? lastTurn.questionComplexity : "Basic";
@@ -56,8 +55,8 @@ export const generateFastNextQuestion = async (
   - Last Question: "${lastQuestion}" (Level: ${lastComplexity})
   
   TASK:
-  1. Transcribe the user's audio response accurately.
-  2. Quickly assess Answer Quality (Basic/Intermediate/Expert).
+  1. Transcribe the user's audio response accurately. IF AUDIO IS SILENT OR UNINTELLIGIBLE, return transcript as "(No audible response detected)".
+  2. Assess Answer Quality (Basic/Intermediate/Expert).
   3. Generate the Next Question based on ADAPTIVE LOGIC:
      - IF Basic: Drill down or ask for clarification.
      - IF Intermediate: Ask for a specific example or edge case.
@@ -69,7 +68,7 @@ export const generateFastNextQuestion = async (
 
   const parts: any[] = [{ text: prompt }];
   
-  // Attach Context (Lightweight version if possible, but sending full context for accuracy)
+  // Attach Context
   if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
   if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
   
@@ -94,13 +93,23 @@ export const generateFastNextQuestion = async (
       }
     });
 
-    return JSON.parse(response.text || "{}");
+    const json = JSON.parse(response.text || "{}");
+    
+    // Validation
+    if (!json.transcript || json.transcript.trim() === "") {
+        json.transcript = "(No audible response detected)";
+    }
+    if (!json.nextQuestion) {
+        json.nextQuestion = "Could you clarify your previous answer?";
+    }
+
+    return json;
   } catch (error) {
     console.error("Fast Gen Error:", error);
     return {
       transcript: "(Audio transcription failed)",
       answerQuality: "Basic",
-      nextQuestion: "Could you elaborate on that point?",
+      nextQuestion: "I didn't catch that. Could you repeat?",
       nextComplexity: "Basic"
     };
   }
@@ -177,8 +186,9 @@ export const analyzeResponseDeeply = async (
     return JSON.parse(response.text || "{}");
   } catch (error) {
     console.error("Deep Analysis Error:", error);
+    // RETURN 0 to indicate failure, do not fake "50"
     return {
-        technicalAccuracy: 50, communicationClarity: 50, relevance: 50, sentiment: "Neutral",
+        technicalAccuracy: 0, communicationClarity: 0, relevance: 0, sentiment: "Neutral",
         deceptionProbability: 0, paceOfSpeech: "Normal", starMethodAdherence: false,
         keySkillsDemonstrated: [], improvementAreas: ["Analysis Failed"],
         integrity: { status: "Clean" }, answerQuality: "Basic"
@@ -194,7 +204,34 @@ export const generateFinalReport = async (
   const ai = getAI();
   const model = "gemini-2.5-flash";
 
-  const conversationLog = history.map((t, i) => `
+  // REAL-TIME GUARDRAIL:
+  // Filter out turns that failed transcription or were silent.
+  const validTurns = history.filter(t => 
+    t.transcript && 
+    t.transcript.length > 5 && 
+    !t.transcript.includes("(Audio transcription failed)") &&
+    !t.transcript.includes("(No audible response detected)")
+  );
+
+  // If no valid conversation occurred, return a NO_DATA report immediately.
+  // DO NOT ask Gemini to generate a report from empty data (Hallucination prevention).
+  if (validTurns.length === 0) {
+      return {
+        overallScore: 0,
+        integrityScore: 0,
+        skillDepthBreakdown: { basic: 0, intermediate: 0, expert: 0 },
+        categoryScores: {
+          subjectKnowledge: 0, behavioral: 0, functional: 0, 
+          nonFunctional: 0, communication: 0, technical: 0
+        },
+        summary: "Interview ended without any valid candidate conversation.",
+        psychologicalProfile: "N/A - No Data Recorded",
+        recommendation: 'NO_HIRE',
+        turns: []
+      };
+  }
+
+  const conversationLog = validTurns.map((t, i) => `
     [Turn ${i+1} | Level: ${t.questionComplexity}]
     Q: ${t.question}
     A: ${t.transcript}
@@ -264,7 +301,7 @@ export const generateFinalReport = async (
       
       return {
         ...json,
-        turns: history
+        turns: validTurns // Only attach valid turns
       };
   } catch (error) {
       console.error("Gemini API Error in Report:", error);
