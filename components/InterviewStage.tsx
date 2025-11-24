@@ -1,7 +1,8 @@
+
 import React, { useState, useRef } from 'react';
-import { AppStage, InterviewContextData, InterviewTurn, QuestionComplexity } from '../types';
+import { AppStage, InterviewContextData, InterviewTurn, QuestionComplexity, CodingChallenge } from '../types';
 import WebcamRecorder, { WebcamRef } from './WebcamRecorder';
-import { generateFastNextQuestion, analyzeResponseDeeply } from '../services/geminiService';
+import { generateFastNextQuestion, analyzeResponseDeeply, generateCodingChallenge } from '../services/geminiService';
 import { blobToBase64 } from '../utils';
 import { Icons } from '../constants';
 
@@ -18,13 +19,24 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
   const [currentQuestion, setCurrentQuestion] = useState<string>("Tell me about yourself in brief.");
   const [currentComplexity, setCurrentComplexity] = useState<QuestionComplexity>('Basic');
   
+  // Interaction Modes
+  const [viewMode, setViewMode] = useState<'VIDEO' | 'CODE'>('VIDEO');
+  const [codeBuffer, setCodeBuffer] = useState<string>('');
+
+  // Technical Copilot State
+  const [activeChallenge, setActiveChallenge] = useState<CodingChallenge | null>(null);
+  const [showSolution, setShowSolution] = useState(false);
+  const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
+
   const [isRecording, setIsRecording] = useState(false);
   const [processingState, setProcessingState] = useState<'IDLE' | 'GENERATING_QUESTION' | 'ANALYZING_BACKGROUND'>('IDLE');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   const webcamRef = useRef<WebcamRef>(null);
 
   const handleStartRecording = () => {
     setIsRecording(true);
+    setErrorMsg(null);
     webcamRef.current?.startRecording();
   };
 
@@ -33,59 +45,95 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
     webcamRef.current?.stopRecording(); // Triggers onDataAvailable
   };
 
-  const processAnswerData = async (audioBlob: Blob) => {
+  const handleGenerateChallenge = async () => {
+      setIsGeneratingChallenge(true);
+      try {
+          const challenge = await generateCodingChallenge(context);
+          setActiveChallenge(challenge);
+          setCurrentQuestion(challenge.description); // Auto-set the question
+          setCurrentComplexity(challenge.difficulty);
+      } catch (e) {
+          console.error("Challenge gen failed", e);
+      } finally {
+          setIsGeneratingChallenge(false);
+      }
+  };
+
+  const processAnswerData = async (mediaBlob: Blob) => {
+    // Validate Blob Size
+    if (mediaBlob.size < 1000) {
+        setErrorMsg("No audio detected. Please ensure the microphone is working.");
+        setIsRecording(false);
+        return;
+    }
+
     setProcessingState('GENERATING_QUESTION');
     
     try {
-      const audioBase64 = await blobToBase64(audioBlob);
-      // Capture frame immediately for the Deep Analysis later
+      const mediaBase64 = await blobToBase64(mediaBlob);
       const frameBase64 = webcamRef.current?.captureFrame() || "";
+      const codeSubmitted = viewMode === 'CODE' && codeBuffer.length > 5 ? codeBuffer : undefined;
 
-      // Store current context before generating next
+      // Store context
       const thisTurnId = history.length + 1;
       const questionAsked = currentQuestion;
       const complexityAsked = currentComplexity;
 
-      // PHASE 1: Fast Gen (Transcript + Next Question)
-      const fastResult = await generateFastNextQuestion(context, history, audioBase64);
+      // PHASE 1: Fast Gen 
+      const fastResult = await generateFastNextQuestion(context, history, mediaBase64);
+      
+      if (fastResult.transcript.includes("(No audible response") || fastResult.transcript.includes("(Error")) {
+           const failedTurn: InterviewTurn = {
+            id: thisTurnId,
+            question: questionAsked,
+            questionComplexity: complexityAsked,
+            answerAudioBase64: mediaBase64,
+            transcript: fastResult.transcript,
+            submittedCode: codeSubmitted,
+            analysis: { 
+                technicalAccuracy: 0, communicationClarity: 0, relevance: 0, sentiment: 'Neutral', 
+                deceptionProbability: 0, paceOfSpeech: 'Normal', starMethodAdherence: false,
+                keySkillsDemonstrated: [], improvementAreas: ["No Speech Detected"],
+                integrity: { status: 'Clean' }, answerQuality: 'Basic'
+            }
+          };
+          setHistory(prev => [...prev, failedTurn]);
+          setCurrentQuestion(fastResult.nextQuestion); 
+          setProcessingState('IDLE');
+          return;
+      }
 
-      // Create a temporary turn with partial data
+      // Create Turn
       const newTurn: InterviewTurn = {
         id: thisTurnId,
         question: questionAsked,
         questionComplexity: complexityAsked,
-        answerAudioBase64: audioBase64,
+        answerAudioBase64: mediaBase64,
         transcript: fastResult.transcript,
+        submittedCode: codeSubmitted,
         analysis: { 
-            // Default placeholder values until Phase 2 completes
-            technicalAccuracy: 0, 
-            communicationClarity: 0, 
-            relevance: 0, 
-            sentiment: 'Neutral', 
-            deceptionProbability: 0, 
-            paceOfSpeech: 'Normal',
-            starMethodAdherence: false,
-            keySkillsDemonstrated: [], 
-            improvementAreas: [],
-            integrity: { status: 'Clean' },
-            answerQuality: fastResult.answerQuality // We get this from Phase 1
+            technicalAccuracy: 0, communicationClarity: 0, relevance: 0, sentiment: 'Neutral', 
+            deceptionProbability: 0, paceOfSpeech: 'Normal', starMethodAdherence: false,
+            keySkillsDemonstrated: [], improvementAreas: [],
+            integrity: { status: 'Clean' }, answerQuality: fastResult.answerQuality
         }
       };
 
-      // Update History & UI immediately
       setHistory(prev => [...prev, newTurn]);
       setCurrentQuestion(fastResult.nextQuestion);
       setCurrentComplexity(fastResult.nextComplexity);
       
-      // PHASE 2: Trigger Deep Analysis in Background
+      // Reset Code Buffer if submitted
+      if (codeSubmitted) setCodeBuffer('');
+      
+      // PHASE 2: Deep Analysis
       setProcessingState('ANALYZING_BACKGROUND');
       
-      // Async call - does not block the UI
-      analyzeResponseDeeply(context, fastResult.transcript, audioBase64, frameBase64, questionAsked)
+      analyzeResponseDeeply(context, fastResult.transcript, mediaBase64, frameBase64, questionAsked, codeSubmitted)
         .then((deepAnalysis) => {
             setHistory(prev => prev.map(turn => 
                 turn.id === thisTurnId 
-                ? { ...turn, analysis: deepAnalysis } // Merge deep analysis
+                ? { ...turn, analysis: deepAnalysis }
                 : turn
             ));
             setProcessingState('IDLE');
@@ -97,7 +145,7 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
       
     } catch (err) {
       console.error("Critical Failure in Phase 1", err);
-      setCurrentQuestion("The connection was unstable. Please ask the candidate to repeat.");
+      setErrorMsg("Connection lost with AI service.");
       setProcessingState('IDLE');
     }
   };
@@ -115,7 +163,7 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-300">
       
-      {/* Interviewer HUD Header */}
+      {/* Header */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
@@ -128,9 +176,7 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
                  </div>
                  <span className="text-lg font-bold tracking-tight hidden lg:block text-slate-900 dark:text-white">ProbeLensAI</span>
               </div>
-
               <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden md:block"></div>
-
               <div className="bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border border-cyan-200 dark:border-cyan-800 flex items-center">
                 <Icons.Cpu className="w-3 h-3 mr-1" /> HR Command Center
               </div>
@@ -152,7 +198,7 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
 
       <main className="flex-grow flex flex-col lg:flex-row max-w-7xl mx-auto w-full p-4 gap-6">
         
-        {/* LEFT: Interviewer Actions */}
+        {/* LEFT: Action Area */}
         <div className="flex-1 flex flex-col space-y-6 order-2 lg:order-1">
           
           {/* Question Card */}
@@ -176,18 +222,23 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
                     <div className="flex flex-col items-center justify-center space-y-4">
                         <Icons.Loader2 className="w-8 h-8 text-cyan-500 animate-spin" />
                         <p className="text-lg font-semibold text-slate-700 dark:text-slate-300">Generating Adaptive Question...</p>
-                        <span className="text-xs text-slate-400">Processing Transcript & Context</span>
+                        <span className="text-xs text-slate-400">Analyzing Audio & Response Quality...</span>
                     </div>
                 ) : (
                     <div className="animate-in slide-in-from-left duration-300">
                         <p className="text-2xl md:text-3xl font-bold leading-snug text-slate-900 dark:text-white">
                         "{currentQuestion}"
                         </p>
+                        {errorMsg && (
+                            <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center text-red-600 dark:text-red-400 text-sm">
+                                <Icons.AlertCircle className="w-4 h-4 mr-2" />
+                                {errorMsg}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
             
-            {/* Background Activity Indicator */}
             {processingState === 'ANALYZING_BACKGROUND' && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800">
                     <div className="h-full bg-cyan-500 animate-progressBar"></div>
@@ -233,20 +284,98 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
         {/* RIGHT: HR Intelligence Dashboard */}
         <div className="lg:w-[450px] flex flex-col space-y-4 order-1 lg:order-2">
           
-          {/* 1. Live Video Feed (Screen/Camera) */}
-          <div className="bg-black rounded-2xl overflow-hidden shadow-2xl ring-1 ring-slate-900/10 dark:ring-slate-700 relative aspect-video group">
-             <WebcamRecorder 
-                ref={webcamRef}
-                onDataAvailable={processAnswerData}
-                onFrameCapture={() => {}} 
-                isRecording={isRecording}
-            />
-            <div className="absolute top-4 left-4 flex space-x-2 pointer-events-none">
-                <div className="bg-black/60 backdrop-blur px-2 py-1 rounded text-white text-[10px] font-mono border border-white/10 flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></div>
-                    LIVE MONITOR
-                </div>
-            </div>
+          {/* TAB SELECTOR */}
+          <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
+              <button 
+                onClick={() => setViewMode('VIDEO')}
+                className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center space-x-2 transition ${viewMode === 'VIDEO' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                 <Icons.Video className="w-3 h-3" />
+                 <span>Live Monitor</span>
+              </button>
+              <button 
+                onClick={() => setViewMode('CODE')}
+                className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center space-x-2 transition ${viewMode === 'CODE' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                 <Icons.Cpu className="w-3 h-3" />
+                 <span>Code Copilot</span>
+              </button>
+          </div>
+
+          {/* 1. VIEWPORT: Video or Code */}
+          <div className="bg-black rounded-2xl overflow-hidden shadow-2xl ring-1 ring-slate-900/10 dark:ring-slate-700 relative aspect-video group flex flex-col">
+             
+             {viewMode === 'VIDEO' ? (
+                <>
+                    <WebcamRecorder 
+                        ref={webcamRef}
+                        onDataAvailable={processAnswerData}
+                        onFrameCapture={() => {}} 
+                        isRecording={isRecording}
+                    />
+                    <div className="absolute top-4 left-4 flex space-x-2 pointer-events-none">
+                        <div className="bg-black/60 backdrop-blur px-2 py-1 rounded text-white text-[10px] font-mono border border-white/10 flex items-center">
+                            <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></div>
+                            LIVE MONITOR
+                        </div>
+                    </div>
+                </>
+             ) : (
+                 <div className="w-full h-full bg-slate-900 flex flex-col">
+                    {/* Copilot Header */}
+                    <div className="bg-slate-800 px-4 py-2 flex justify-between items-center border-b border-slate-700 shrink-0">
+                        <span className="text-[10px] font-mono text-cyan-400">TECHNICAL_COPILOT_V2</span>
+                        <button 
+                            onClick={handleGenerateChallenge}
+                            disabled={isGeneratingChallenge}
+                            className="bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] font-bold px-3 py-1 rounded flex items-center"
+                        >
+                            {isGeneratingChallenge ? <Icons.Loader2 className="w-3 h-3 animate-spin" /> : <Icons.Zap className="w-3 h-3 mr-1" />}
+                            Generate Challenge
+                        </button>
+                    </div>
+
+                    {/* Content Area */}
+                    <div className="flex-grow flex flex-col relative overflow-hidden">
+                        {/* Challenge Overlay */}
+                        {activeChallenge && (
+                            <div className="bg-slate-800 border-b border-slate-700 p-3 animate-in slide-in-from-top">
+                                <h4 className="text-xs font-bold text-white flex items-center justify-between">
+                                    {activeChallenge.title}
+                                    <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">{activeChallenge.difficulty}</span>
+                                </h4>
+                                <p className="text-[10px] text-slate-400 mt-1">{activeChallenge.description}</p>
+                                
+                                <div className="mt-2">
+                                    <button 
+                                        onClick={() => setShowSolution(!showSolution)}
+                                        className="text-[10px] text-cyan-400 hover:underline flex items-center"
+                                    >
+                                        {showSolution ? <Icons.CheckCircle className="w-3 h-3 mr-1" /> : <Icons.Lock className="w-3 h-3 mr-1" />}
+                                        {showSolution ? "Hide Solution Key" : "Reveal Solution Key"}
+                                    </button>
+                                    
+                                    {showSolution && (
+                                        <div className="mt-2 bg-black/50 p-2 rounded border border-slate-600">
+                                            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Expected Solution ({activeChallenge.expectedTimeComplexity})</p>
+                                            <pre className="text-[9px] text-green-400 font-mono whitespace-pre-wrap">{activeChallenge.solutionCode}</pre>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <textarea
+                            value={codeBuffer}
+                            onChange={(e) => setCodeBuffer(e.target.value)}
+                            className="flex-grow bg-slate-950 text-green-400 font-mono text-xs p-4 outline-none resize-none"
+                            placeholder="// 1. Click 'Generate Challenge' to get a problem based on JD.
+// 2. Ask candidate to solve it.
+// 3. Paste their code here & click 'Finish Answer' to analyze."
+                        />
+                    </div>
+                 </div>
+             )}
           </div>
 
           {/* 2. Real-Time Analysis Feed */}
@@ -255,10 +384,9 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center">
                     <Icons.Activity className="w-4 h-4 mr-2" /> Live Intelligence
                 </p>
-                {/* Status Indicator for Deep Analysis */}
                 {processingState === 'ANALYZING_BACKGROUND' ? (
                     <span className="text-[10px] font-bold px-2 py-1 rounded bg-yellow-100 text-yellow-700 border border-yellow-200 flex items-center">
-                        <Icons.Loader2 className="w-3 h-3 mr-1 animate-spin" /> Analyzing Integrity...
+                        <Icons.Loader2 className="w-3 h-3 mr-1 animate-spin" /> Analyzing...
                     </span>
                 ) : lastAnalysis && (
                     <span className={`text-[10px] font-bold px-2 py-1 rounded border ${lastAnalysis.integrity.status === 'Clean' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200 animate-pulse'}`}>
@@ -280,7 +408,6 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
                          <div className="flex items-center justify-between">
                              <div className="flex items-center space-x-2">
                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold border-4 transition-all duration-500 ${
-                                     // Gray out score if still calculating
                                      processingState === 'ANALYZING_BACKGROUND' && history[history.length-1].analysis.technicalAccuracy === 0
                                      ? 'border-slate-200 text-slate-300' 
                                      : lastAnalysis?.technicalAccuracy! > 75 ? 'border-green-500 text-green-600' : 
@@ -293,39 +420,42 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
                                  </div>
                                  <div>
                                      <p className="text-sm font-bold text-slate-900 dark:text-white">Technical Score</p>
-                                     <p className="text-xs text-slate-500">{lastAnalysis?.answerQuality} Level Response</p>
+                                     <p className="text-xs text-slate-500">{lastAnalysis?.answerQuality} Level</p>
                                  </div>
                              </div>
                          </div>
                      </div>
 
-                     {/* Cheating / Integrity Alert */}
+                     {/* Code Forensics Alert */}
+                     {lastAnalysis?.codeAnalysis && (
+                        <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[10px] text-cyan-400 font-mono uppercase">Code Analysis</span>
+                                <span className="text-[10px] text-white font-bold bg-slate-700 px-2 rounded">{lastAnalysis.codeAnalysis.score}/100</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 font-mono">
+                                <div>Time: <span className="text-yellow-400">{lastAnalysis.codeAnalysis.timeComplexity}</span></div>
+                                <div>Space: <span className="text-purple-400">{lastAnalysis.codeAnalysis.spaceComplexity}</span></div>
+                            </div>
+                            {lastAnalysis.codeAnalysis.bugs.length > 0 && (
+                                <div className="mt-2 text-[10px] text-red-400">
+                                    ⚠ {lastAnalysis.codeAnalysis.bugs[0]}
+                                </div>
+                            )}
+                        </div>
+                     )}
+
+                     {/* Cheating Alert */}
                      {lastAnalysis?.integrity.status === 'Suspicious' && (
                          <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-3 rounded-r-md animate-in slide-in-from-right">
                              <p className="text-xs font-bold text-red-700 dark:text-red-400 flex items-center">
-                                 <Icons.AlertCircle className="w-3 h-3 mr-1" /> SUSPICIOUS BEHAVIOR DETECTED
+                                 <Icons.AlertCircle className="w-3 h-3 mr-1" /> SUSPICIOUS
                              </p>
                              <p className="text-xs text-red-600 dark:text-red-300 mt-1">
                                  {lastAnalysis.integrity.flaggedReason}
                              </p>
                          </div>
                      )}
-
-                     {/* Key Signals */}
-                     <div className="grid grid-cols-2 gap-2">
-                         <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded">
-                             <span className="text-[10px] text-slate-400 block">Sentiment</span>
-                             <span className="text-xs font-semibold dark:text-slate-200">
-                                {processingState === 'ANALYZING_BACKGROUND' && history[history.length-1].analysis.sentiment === 'Neutral' ? 'Analyzing...' : lastAnalysis?.sentiment}
-                             </span>
-                         </div>
-                         <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded">
-                             <span className="text-[10px] text-slate-400 block">Pace</span>
-                             <span className="text-xs font-semibold dark:text-slate-200">
-                                {processingState === 'ANALYZING_BACKGROUND' && history[history.length-1].analysis.paceOfSpeech === 'Normal' ? 'Analyzing...' : lastAnalysis?.paceOfSpeech}
-                             </span>
-                         </div>
-                     </div>
                  </div>
              )}
           </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Icons } from '../constants';
-import { AppStage, InterviewContextData } from '../types';
+import { AppStage, InterviewContextData, InterviewBatch, CandidateProfile } from '../types';
 import { processFile } from '../utils';
 
 interface SetupStageProps {
@@ -11,139 +11,254 @@ interface SetupStageProps {
 }
 
 const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode, toggleTheme }) => {
-  const [candidateName, setCandidateName] = useState('');
+  // Batch State
+  const [batches, setBatches] = useState<InterviewBatch[]>([]);
+  
+  // Form State for New Batch
+  const [jobTitle, setJobTitle] = useState('');
   const [jdFile, setJdFile] = useState<File | null>(null);
-  const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [kbFile, setKbFile] = useState<File | null>(null);
+  const [resumeFiles, setResumeFiles] = useState<FileList | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleStart = async () => {
-    if (!candidateName || !jdFile || !resumeFile) return;
+  // Helper to create a batch
+  const handleCreateBatch = async () => {
+    if (!jobTitle || !jdFile || !resumeFiles || resumeFiles.length === 0) {
+        setError("Please provide a Job Title, JD, and at least one Resume.");
+        return;
+    }
 
     setIsProcessing(true);
     setError(null);
-    try {
-      const jdData = await processFile(jdFile);
-      const resumeData = await processFile(resumeFile);
-      const kbData = kbFile ? await processFile(kbFile) : null;
 
-      setContext({
-        candidateName,
-        jobDescription: jdData,
-        resume: resumeData,
-        knowledgeBase: kbData
-      });
-      
-      setStage(AppStage.INTERVIEW);
-    } catch (error: any) {
-      console.error("Error processing files", error);
-      setError(error.message || "Failed to process files. Please upload valid PDF or Text files.");
+    try {
+        // 1. Process JD
+        const jdData = await processFile(jdFile);
+        
+        // 2. Process Resumes
+        const candidates: CandidateProfile[] = [];
+        for (let i = 0; i < resumeFiles.length; i++) {
+            const file = resumeFiles[i];
+            const resumeData = await processFile(file);
+            candidates.push({
+                id: Math.random().toString(36).substr(2, 9),
+                name: file.name.replace(/\.[^/.]+$/, ""), // Remove extension for name
+                resume: resumeData,
+                status: 'READY'
+            });
+        }
+
+        const newBatch: InterviewBatch = {
+            id: Date.now().toString(),
+            jobTitle,
+            jobDescription: jdData,
+            candidates,
+            createdAt: Date.now()
+        };
+
+        setBatches(prev => [newBatch, ...prev]);
+        
+        // Reset Form
+        setJobTitle('');
+        setJdFile(null);
+        setResumeFiles(null);
+
+    } catch (err: any) {
+        console.error("Batch creation failed", err);
+        setError("Failed to process files. Ensure they are PDF or Text.");
     } finally {
-      setIsProcessing(false);
+        setIsProcessing(false);
     }
   };
 
-  const FileInput = ({ label, file, setFile, optional = false }: { label: string, file: File | null, setFile: (f: File) => void, optional?: boolean }) => (
-    <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-6 flex flex-col items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-cyan-500 dark:hover:border-cyan-500 transition cursor-pointer relative group h-40">
-      <input 
-        type="file" 
-        onChange={(e) => {
-            setError(null);
-            if (e.target.files) setFile(e.target.files[0]);
-        }}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-        accept=".pdf,.txt,.md"
-      />
-      <Icons.Upload className={`w-8 h-8 mb-2 ${file ? 'text-green-500' : 'text-slate-400 group-hover:text-cyan-500'}`} />
-      <p className="text-sm font-medium text-slate-700 dark:text-slate-300 text-center truncate w-full px-2">{file ? file.name : `Upload ${label}`}</p>
-      <p className="text-xs text-slate-400 mt-1">PDF or Text</p>
-      {optional && !file && <span className="text-xs text-slate-500 mt-1">(Optional)</span>}
-      {file && <div className="absolute top-2 right-2 text-green-500"><Icons.CheckCircle className="w-4 h-4"/></div>}
-    </div>
-  );
+  const handleLaunchInterview = (batch: InterviewBatch, candidate: CandidateProfile) => {
+      // SET GLOBAL CONTEXT FOR THE AI
+      // This ensures no fake data - we are injecting specific resume & JD
+      setContext({
+          candidateName: candidate.name,
+          jobDescription: batch.jobDescription,
+          resume: candidate.resume,
+          knowledgeBase: null // Can be added to batch later if needed
+      });
+      setStage(AppStage.INTERVIEW);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-12 px-4 transition-colors duration-300">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 flex flex-col">
+      
+      {/* Header */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div 
             className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
             onClick={() => setStage(AppStage.HOME)}
           >
             <Icons.Brain className="w-6 h-6 text-cyan-500" />
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">ProbeLensAI</h1>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Recruiter Dashboard</h1>
           </div>
           <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition text-slate-900 dark:text-white">
             {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
           </button>
         </div>
+      </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl overflow-hidden border border-slate-200 dark:border-slate-800">
-          <div className="bg-slate-100 dark:bg-slate-800 p-8 border-b border-slate-200 dark:border-slate-700">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center">
-              <Icons.Settings className="mr-3 w-6 h-6" /> Configuration
-            </h2>
-            <p className="text-slate-600 dark:text-slate-400 mt-2">
-              Prepare the environment for the candidate. This section is for the **Recruiter**.
-            </p>
-          </div>
-          
-          <div className="p-6 md:p-8 space-y-8">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Candidate Full Name</label>
-              <input 
-                type="text" 
-                value={candidateName}
-                onChange={(e) => setCandidateName(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white transition"
-                placeholder="e.g. Alex Johnson"
-              />
+      <div className="flex-grow max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        {/* LEFT COLUMN: Ingestion Engine */}
+        <div className="lg:col-span-4 space-y-6">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+                <div className="flex items-center mb-6 text-slate-800 dark:text-white">
+                    <Icons.Layers className="w-5 h-5 mr-2 text-cyan-600" />
+                    <h2 className="text-lg font-bold">Create Job Batch</h2>
+                </div>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase">Job Role / Title</label>
+                        <input 
+                            type="text"
+                            value={jobTitle}
+                            onChange={(e) => setJobTitle(e.target.value)}
+                            placeholder="e.g. Senior React Developer"
+                            className="w-full mt-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase">Job Description (JD)</label>
+                        <div className="mt-1 relative group">
+                            <input 
+                                type="file" 
+                                onChange={(e) => e.target.files && setJdFile(e.target.files[0])}
+                                accept=".pdf,.txt,.md"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <div className={`border-2 border-dashed rounded-lg p-4 flex items-center justify-center transition-colors ${jdFile ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-slate-300 dark:border-slate-700 hover:border-cyan-500'}`}>
+                                {jdFile ? (
+                                    <div className="flex items-center text-green-600 text-sm font-medium">
+                                        <Icons.CheckCircle className="w-4 h-4 mr-2" /> {jdFile.name}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center text-slate-400">
+                                        <Icons.FileText className="w-6 h-6 mb-1" />
+                                        <span className="text-xs">Upload JD (PDF/Text)</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase">Candidate Resumes (Batch)</label>
+                        <div className="mt-1 relative group">
+                            <input 
+                                type="file" 
+                                onChange={(e) => setResumeFiles(e.target.files)}
+                                accept=".pdf,.txt,.md"
+                                multiple
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <div className={`border-2 border-dashed rounded-lg p-8 flex items-center justify-center transition-colors ${resumeFiles && resumeFiles.length > 0 ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-slate-300 dark:border-slate-700 hover:border-cyan-500'}`}>
+                                {resumeFiles && resumeFiles.length > 0 ? (
+                                    <div className="text-center">
+                                        <div className="flex items-center justify-center text-green-600 text-sm font-medium mb-1">
+                                            <Icons.CheckCircle className="w-4 h-4 mr-2" /> {resumeFiles.length} Resumes Selected
+                                        </div>
+                                        <p className="text-xs text-slate-500">Ready to process</p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center text-slate-400">
+                                        <Icons.Upload className="w-8 h-8 mb-2" />
+                                        <span className="text-sm font-medium">Bulk Upload Resumes</span>
+                                        <span className="text-xs mt-1">Drag & drop or click to select multiple</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 text-xs rounded-lg flex items-center">
+                            <Icons.AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" /> {error}
+                        </div>
+                    )}
+
+                    <button 
+                        onClick={handleCreateBatch}
+                        disabled={isProcessing}
+                        className="w-full py-3 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-xl font-bold transition shadow-lg flex items-center justify-center"
+                    >
+                        {isProcessing ? <Icons.Loader2 className="animate-spin w-5 h-5" /> : "Queue Batch"}
+                    </button>
+                </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <FileInput label="Job Description" file={jdFile} setFile={setJdFile} />
-              <FileInput label="Candidate Resume" file={resumeFile} setFile={setResumeFile} />
-              <FileInput label="Knowledge Base" file={kbFile} setFile={setKbFile} optional />
-            </div>
-
-            {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded relative flex items-center" role="alert">
-                  <Icons.AlertCircle className="w-5 h-5 mr-2" />
-                  <span className="block sm:inline">{error}</span>
-              </div>
-            )}
-
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg flex items-start space-x-3 border border-blue-100 dark:border-blue-800">
-               <Icons.Lock className="text-blue-600 dark:text-blue-400 w-5 h-5 mt-0.5 flex-shrink-0" />
-               <div className="text-sm text-blue-800 dark:text-blue-200">
-                 <p className="font-semibold mb-1">Next Step: Candidate Session</p>
-                 <p>Clicking "Launch" will switch the view to the **Candidate Interface**. The System will generate the first question automatically based on the JD/Resume overlap. The webcam/screen recorder will activate for the candidate.</p>
-               </div>
-            </div>
-
-            <div className="flex justify-end pt-4">
-               <button
-                 onClick={handleStart}
-                 disabled={!candidateName || !jdFile || !resumeFile || isProcessing}
-                 className={`flex items-center px-8 py-4 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] shadow-lg
-                   ${(!candidateName || !jdFile || !resumeFile || isProcessing) 
-                     ? 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed text-slate-500' 
-                     : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500'}`}
-               >
-                 {isProcessing ? (
-                   <>
-                    <Icons.Loader2 className="animate-spin mr-2" /> Initializing System...
-                   </>
-                 ) : (
-                   <>
-                     Launch Candidate Session <Icons.ArrowRight className="ml-2" />
-                   </>
-                 )}
-               </button>
-            </div>
-          </div>
         </div>
+
+        {/* RIGHT COLUMN: Queue Management */}
+        <div className="lg:col-span-8 space-y-6">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center">
+                <Icons.Briefcase className="w-6 h-6 mr-2" /> Interview Queue
+            </h2>
+            
+            {batches.length === 0 ? (
+                <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-12 flex flex-col items-center justify-center text-slate-400">
+                    <Icons.Layers className="w-16 h-16 mb-4 opacity-20" />
+                    <p className="text-lg font-medium">No Active Batches</p>
+                    <p className="text-sm">Create a Job Batch on the left to get started.</p>
+                </div>
+            ) : (
+                <div className="space-y-6">
+                    {batches.map((batch) => (
+                        <div key={batch.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden animate-in slide-in-from-bottom duration-500">
+                            {/* Batch Header */}
+                            <div className="bg-slate-50 dark:bg-slate-800/50 px-6 py-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-800">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">{batch.jobTitle}</h3>
+                                    <p className="text-xs text-slate-500 flex items-center mt-1">
+                                        <Icons.FileText className="w-3 h-3 mr-1" /> {batch.jobDescription.name}
+                                        <span className="mx-2">•</span>
+                                        {batch.candidates.length} Candidates
+                                        <span className="mx-2">•</span>
+                                        Batch ID: #{batch.id.substr(8)}
+                                    </p>
+                                </div>
+                                <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-xs font-bold">
+                                    Active
+                                </div>
+                            </div>
+
+                            {/* Candidate List */}
+                            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {batch.candidates.map((candidate) => (
+                                    <div key={candidate.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                        <div className="flex items-center space-x-4">
+                                            <div className="w-10 h-10 rounded-full bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 font-bold">
+                                                {candidate.name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{candidate.name}</p>
+                                                <p className="text-xs text-slate-500 flex items-center">
+                                                    <Icons.FileText className="w-3 h-3 mr-1" /> {candidate.resume.name}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <button 
+                                            onClick={() => handleLaunchInterview(batch, candidate)}
+                                            className="px-4 py-2 bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-700 text-white text-xs font-bold rounded-lg shadow-md flex items-center space-x-2 transition transform active:scale-95"
+                                        >
+                                            <span>Start Interview</span>
+                                            <Icons.ArrowRight className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+
       </div>
     </div>
   );

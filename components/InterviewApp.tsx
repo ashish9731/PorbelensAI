@@ -4,6 +4,8 @@ import Home from './Home';
 import SetupStage from './SetupStage';
 import InterviewStage from './InterviewStage';
 import ReportStage from './ReportStage';
+import { auth } from '../services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 const InterviewApp: React.FC = () => {
   const [stage, setStage] = useState<AppStage>(AppStage.HOME);
@@ -15,7 +17,9 @@ const InterviewApp: React.FC = () => {
   });
   const [history, setHistory] = useState<InterviewTurn[]>([]);
   const [darkMode, setDarkMode] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
+  // Theme Init
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -24,7 +28,26 @@ const InterviewApp: React.FC = () => {
     }
   }, [darkMode]);
 
+  // Auth Persistence Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // User is signed in, skip Home if currently at Home
+        if (stage === AppStage.HOME) {
+            setStage(AppStage.SETUP);
+        }
+      } 
+      setIsAuthChecking(false);
+    });
+
+    return () => unsubscribe();
+  }, [stage]);
+
   const toggleTheme = () => setDarkMode(!darkMode);
+
+  if (isAuthChecking) {
+      return <div className="min-h-screen bg-slate-50 dark:bg-slate-950"></div>; // Clean loading state
+  }
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark' : ''}`}>

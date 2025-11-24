@@ -1,30 +1,29 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { InterviewContextData, InterviewTurn, AnalysisMetrics, ReportData, AnswerQuality, QuestionComplexity } from "../types";
-import { API_KEY as ENV_KEY } from "../env";
 
-const getApiKey = () => {
-  const key = process.env.API_KEY || ENV_KEY;
-  return key;
-};
+import { GoogleGenAI, Type } from "@google/genai";
+import { InterviewContextData, InterviewTurn, AnalysisMetrics, ReportData, AnswerQuality, QuestionComplexity, CodeAnalysisData, CodingChallenge } from "../types";
+import { API_KEY as ENV_KEY } from '../env';
 
 export const checkApiKey = () => {
-  const key = getApiKey();
-  if (!key || key.includes("YOUR_GEMINI_API_KEY") || key === '') {
-    throw new Error("API Key is missing. Please check your env.ts file.");
+  const key = process.env.API_KEY || ENV_KEY;
+  if (!key) {
+    throw new Error("API Key is missing. Please check your env variables.");
   }
 };
 
-const getAI = () => new GoogleGenAI({ apiKey: getApiKey() });
+const getAI = () => {
+    const key = process.env.API_KEY || ENV_KEY;
+    return new GoogleGenAI({ apiKey: key });
+}
 
 // Helper to attach file parts correctly
 const attachFilePart = (fileData: any, label: string) => {
     if (fileData.base64) {
         return [
-            { text: `[SYSTEM: The user has uploaded a file for ${label}. Use this context strictly.]` },
+            { text: `[SYSTEM: The user has uploaded a file for ${label}. Use this context strictly. Do not ignore.]` },
             { inlineData: { mimeType: fileData.type, data: fileData.base64 } }
         ];
     } else if (fileData.textContent) {
-        return [{ text: `${label.toUpperCase()} CONTENT:\n${fileData.textContent.substring(0, 15000)}` }];
+        return [{ text: `${label.toUpperCase()} CONTENT:\n${fileData.textContent.substring(0, 20000)}` }];
     }
     return [];
 };
@@ -33,7 +32,7 @@ const attachFilePart = (fileData: any, label: string) => {
 export const generateFastNextQuestion = async (
   context: InterviewContextData,
   history: InterviewTurn[],
-  audioBase64: string
+  mediaBase64: string
 ): Promise<{ 
   transcript: string; 
   nextQuestion: string;
@@ -41,27 +40,30 @@ export const generateFastNextQuestion = async (
   answerQuality: AnswerQuality; 
 }> => {
   const ai = getAI();
-  const model = "gemini-2.5-flash"; // High speed model
+  const model = "gemini-2.5-flash"; // Best for Multimodal Speed
 
   const lastTurn = history[history.length - 1];
   const lastQuestion = lastTurn ? lastTurn.question : "Tell me about yourself in brief.";
   const lastComplexity = lastTurn ? lastTurn.questionComplexity : "Basic";
 
   const prompt = `
-  ROLE: You are the 'ProbeLensAI' Interview Orchestrator. Speed is critical.
+  ROLE: You are 'ProbeLensAI', an expert Technical Interviewer.
   
-  CONTEXT:
-  - Candidate: ${context.candidateName}
-  - Last Question: "${lastQuestion}" (Level: ${lastComplexity})
+  CURRENT STATE:
+  - Candidate Name: ${context.candidateName}
+  - Current Question: "${lastQuestion}"
+  - Difficulty Level: ${lastComplexity}
   
   TASK:
-  1. Transcribe the user's audio response accurately. IF AUDIO IS SILENT OR UNINTELLIGIBLE, return transcript as "(No audible response detected)".
-  2. Assess Answer Quality (Basic/Intermediate/Expert).
-  3. Generate the Next Question based on ADAPTIVE LOGIC:
-     - IF Basic: Drill down or ask for clarification.
-     - IF Intermediate: Ask for a specific example or edge case.
-     - IF Expert: Escalate to a complex system design or tradeoff scenario.
-  4. STRICTLY use the Job Description and Resume context for the question topic.
+  1. LISTEN to the attached video/audio clip carefully.
+  2. TRANSCRIBE the candidate's response word-for-word. 
+     - CRITICAL: If the audio is silent, unintelligible, or empty, output exactly: "(No audible response detected)".
+     - DO NOT INVENT TEXT. DO NOT HALLUCINATE A RESPONSE.
+  3. EVALUATE the answer quality (Basic, Intermediate, or Expert).
+  4. GENERATE the Next Question:
+     - The next question must be logically connected to the candidate's last answer.
+     - If they failed to answer, ask them to repeat or clarify.
+     - Use the Job Description and Resume (provided in context) to guide the topic.
 
   OUTPUT JSON ONLY.
   `;
@@ -72,8 +74,8 @@ export const generateFastNextQuestion = async (
   if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
   if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
   
-  // Attach Audio
-  parts.push({ inlineData: { mimeType: "audio/wav", data: audioBase64 } });
+  // Attach Audio/Video - CRITICAL FIX: Use video/webm as that is what MediaRecorder produces
+  parts.push({ inlineData: { mimeType: "video/webm", data: mediaBase64 } });
 
   try {
     const response = await ai.models.generateContent({
@@ -99,57 +101,188 @@ export const generateFastNextQuestion = async (
     if (!json.transcript || json.transcript.trim() === "") {
         json.transcript = "(No audible response detected)";
     }
+    
+    // STRICT MODE: If nextQuestion is missing, do NOT fallback. Let UI handle error.
     if (!json.nextQuestion) {
-        json.nextQuestion = "Could you clarify your previous answer?";
+        throw new Error("AI failed to generate a follow-up question.");
     }
 
     return json;
   } catch (error) {
     console.error("Fast Gen Error:", error);
     return {
-      transcript: "(Audio transcription failed)",
+      transcript: "(Error analyzing audio)",
       answerQuality: "Basic",
-      nextQuestion: "I didn't catch that. Could you repeat?",
+      nextQuestion: "I encountered a technical glitch analyzing your audio. Please check your microphone and try again.",
       nextComplexity: "Basic"
     };
   }
 };
 
-// PHASE 2: DEEP execution (Integrity, Sentiment, Skills) - Background Process
+// Specialized: Code Forensics
+export const analyzeCodeSnippet = async (
+    code: string, 
+    context: InterviewContextData
+): Promise<CodeAnalysisData> => {
+    const ai = getAI();
+    const model = "gemini-3-pro-preview";
+
+    const prompt = `
+    ROLE: Expert Code Reviewer & Algorithm Analyst.
+    TASK: Analyze the following code snippet provided by a candidate during an interview.
+    
+    CODE:
+    ${code}
+    
+    REQUIREMENTS:
+    1. Determine Time & Space Complexity (Big O).
+    2. Identify potential bugs or edge cases.
+    3. Suggest improvements.
+    4. Score the code quality (0-100).
+    
+    OUTPUT JSON ONLY.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        language: { type: Type.STRING },
+                        timeComplexity: { type: Type.STRING },
+                        spaceComplexity: { type: Type.STRING },
+                        bugs: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        score: { type: Type.NUMBER }
+                    }
+                }
+            }
+        });
+        return JSON.parse(response.text || "{}");
+    } catch (e) {
+        console.error("Code Analysis Error", e);
+        return {
+            language: "Unknown", timeComplexity: "?", spaceComplexity: "?",
+            bugs: ["Analysis Failed"], suggestions: [], score: 0
+        };
+    }
+};
+
+// FEATURE: Technical Copilot - Generate Coding Challenge
+export const generateCodingChallenge = async (context: InterviewContextData): Promise<CodingChallenge> => {
+  const ai = getAI();
+  const model = "gemini-3-pro-preview";
+
+  const prompt = `
+  ROLE: Technical Lead / Hiring Manager.
+  TASK: Create a relevant Coding Challenge for the candidate based on their profile and the JD.
+  
+  GOAL:
+  - The problem should test core skills required in the Job Description.
+  - It should be solvable in 10-15 minutes.
+  - Provide a "Solution Key" for the non-technical interviewer.
+  
+  OUTPUT JSON ONLY.
+  `;
+
+  const parts: any[] = [{ text: prompt }];
+  if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
+  if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
+
+  try {
+    const response = await ai.models.generateContent({
+        model,
+        contents: { parts },
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    difficulty: { type: Type.STRING, enum: ["Intermediate", "Expert"] },
+                    solutionCode: { type: Type.STRING },
+                    expectedTimeComplexity: { type: Type.STRING },
+                    keyConcepts: { type: Type.ARRAY, items: { type: Type.STRING } }
+                }
+            }
+        }
+    });
+    return JSON.parse(response.text || "{}");
+  } catch (error) {
+    console.error("Challenge Gen Error", error);
+    // STRICT MODE: No fake data. If API fails, return explicit error state.
+    return {
+        title: "Generation Failed",
+        description: "The AI Service could not generate a challenge at this time. Please check your network connection or API quota.",
+        difficulty: "Intermediate",
+        solutionCode: "// Error: Generation failed.",
+        expectedTimeComplexity: "N/A",
+        keyConcepts: ["Service Unavailable"]
+    };
+  }
+};
+
+// PHASE 2: DEEP execution (Integrity, Sentiment, Skills, Code)
 export const analyzeResponseDeeply = async (
   context: InterviewContextData,
   transcript: string,
-  audioBase64: string,
+  mediaBase64: string,
   videoFrameBase64: string,
-  previousQuestion: string
+  previousQuestion: string,
+  submittedCode?: string
 ): Promise<AnalysisMetrics> => {
   const ai = getAI();
-  const model = "gemini-2.5-flash"; 
+  const model = "gemini-3-pro-preview"; 
+
+  // Quick exit for bad data
+  if (!transcript || transcript.includes("(No audible response detected)") || transcript.includes("(Error")) {
+       return {
+        technicalAccuracy: 0, communicationClarity: 0, relevance: 0, sentiment: "Neutral",
+        deceptionProbability: 0, paceOfSpeech: "Normal", starMethodAdherence: false,
+        keySkillsDemonstrated: [], improvementAreas: ["No Audio Data"],
+        integrity: { status: "Clean" }, answerQuality: "Basic"
+    };
+  }
+
+  let codeAnalysis: CodeAnalysisData | undefined = undefined;
+  if (submittedCode && submittedCode.length > 10) {
+      codeAnalysis = await analyzeCodeSnippet(submittedCode, context);
+  }
 
   const prompt = `
   ROLE: You are 'ProbeLensAI' Forensic Analyst.
   
-  INPUT:
-  - Question: "${previousQuestion}"
-  - Transcript: "${transcript}"
-  - Evidence: Audio Audio & Video Frame attached.
-
+  INPUT DATA:
+  - Question Asked: "${previousQuestion}"
+  - Candidate Transcript: "${transcript}"
+  ${submittedCode ? `- Code Submitted: Yes (See Separate Analysis)` : ''}
+  
   TASK:
   1. INTEGRITY CHECK (Cheating Detection):
-     - VISUAL: Look at the video frame. Are eyes darting off-screen? Is there a phone?
-     - AUDIO: Listen for typing sounds, whispering, or TTS artifacts.
-     - CONTENT: Is the answer a copy-paste definition?
+     - Check the attached video frame: Are eyes darting? Is a phone visible?
+     - Check the audio: Are there typing sounds? Is the voice robotic?
   
-  2. BEHAVIORAL PROFILING:
-     - Analyze Sentiment, Pace, and STAR Method adherence.
-     - Identify Key Skills demonstrated.
+  2. CONTENT ANALYSIS:
+     - Compare the transcript against the Candidate's Resume (context). Does it align?
+     - Verify technical accuracy (0-100).
+     - Assess sentiment (Confidence vs Anxiety).
+     - Identify Key Skills mentioned.
 
   OUTPUT JSON ONLY.
   `;
 
   const parts: any[] = [{ text: prompt }];
-  // Re-attach video/audio for forensic analysis
-  parts.push({ inlineData: { mimeType: "audio/wav", data: audioBase64 } });
+  
+  // Attach Context
+  if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
+
+  // Re-attach video/audio
+  parts.push({ inlineData: { mimeType: "video/webm", data: mediaBase64 } });
   parts.push({ inlineData: { mimeType: "image/jpeg", data: videoFrameBase64 } });
 
   try {
@@ -183,10 +316,11 @@ export const analyzeResponseDeeply = async (
       }
     });
 
-    return JSON.parse(response.text || "{}");
+    const json = JSON.parse(response.text || "{}");
+    return { ...json, codeAnalysis };
+
   } catch (error) {
     console.error("Deep Analysis Error:", error);
-    // RETURN 0 to indicate failure, do not fake "50"
     return {
         technicalAccuracy: 0, communicationClarity: 0, relevance: 0, sentiment: "Neutral",
         deceptionProbability: 0, paceOfSpeech: "Normal", starMethodAdherence: false,
@@ -202,10 +336,9 @@ export const generateFinalReport = async (
   context: InterviewContextData
 ): Promise<ReportData> => {
   const ai = getAI();
-  const model = "gemini-2.5-flash";
+  const model = "gemini-3-pro-preview";
 
   // REAL-TIME GUARDRAIL:
-  // Filter out turns that failed transcription or were silent.
   const validTurns = history.filter(t => 
     t.transcript && 
     t.transcript.length > 5 && 
@@ -213,8 +346,6 @@ export const generateFinalReport = async (
     !t.transcript.includes("(No audible response detected)")
   );
 
-  // If no valid conversation occurred, return a NO_DATA report immediately.
-  // DO NOT ask Gemini to generate a report from empty data (Hallucination prevention).
   if (validTurns.length === 0) {
       return {
         overallScore: 0,
@@ -222,10 +353,10 @@ export const generateFinalReport = async (
         skillDepthBreakdown: { basic: 0, intermediate: 0, expert: 0 },
         categoryScores: {
           subjectKnowledge: 0, behavioral: 0, functional: 0, 
-          nonFunctional: 0, communication: 0, technical: 0
+          nonFunctional: 0, communication: 0, technical: 0, coding: 0
         },
-        summary: "Interview ended without any valid candidate conversation.",
-        psychologicalProfile: "N/A - No Data Recorded",
+        summary: "Interview ended without any valid candidate conversation. No data to analyze.",
+        psychologicalProfile: "N/A",
         recommendation: 'NO_HIRE',
         turns: []
       };
@@ -235,6 +366,7 @@ export const generateFinalReport = async (
     [Turn ${i+1} | Level: ${t.questionComplexity}]
     Q: ${t.question}
     A: ${t.transcript}
+    ${t.submittedCode ? `[CODE SUBMITTED]: ${t.submittedCode.substring(0, 200)}...` : ''}
     [Metrics] Accuracy: ${t.analysis.technicalAccuracy}, Integrity: ${t.analysis.integrity.status}, Quality: ${t.analysis.answerQuality}
   `).join("\n");
 
@@ -245,14 +377,12 @@ export const generateFinalReport = async (
     ${conversationLog}
     
     TASKS:
-    1. Calculate purely objective scores (0-100).
-    2. Write a "Psychological Profile": Analyze confidence, stress response, and consistency.
-    3. Analyze "Skill Depth": Count how many answers were Basic vs Expert.
-    4. Calculate "Integrity Score": Start at 100, deduct for every "Suspicious" flag.
-    5. Final Recommendation: Be decisive.
+    1. Calculate scores based STRICTLY on the conversation log above.
+    2. Consider CODE QUALITY if code was submitted.
+    3. Write a decisive summary.
     
     OUTPUT JSON ONLY.
-  `;
+    `;
 
   const parts: any[] = [{ text: prompt }];
 
@@ -286,7 +416,8 @@ export const generateFinalReport = async (
                   functional: { type: Type.NUMBER },
                   nonFunctional: { type: Type.NUMBER },
                   communication: { type: Type.NUMBER },
-                  technical: { type: Type.NUMBER }
+                  technical: { type: Type.NUMBER },
+                  coding: { type: Type.NUMBER }
                 }
               },
               summary: { type: Type.STRING },
@@ -298,11 +429,7 @@ export const generateFinalReport = async (
       });
 
       const json = JSON.parse(response.text || "{}");
-      
-      return {
-        ...json,
-        turns: validTurns // Only attach valid turns
-      };
+      return { ...json, turns: validTurns };
   } catch (error) {
       console.error("Gemini API Error in Report:", error);
       throw error;

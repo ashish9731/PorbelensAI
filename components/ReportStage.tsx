@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { AppStage, InterviewContextData, InterviewTurn, ReportData } from '../types';
 import { generateFinalReport } from '../services/geminiService';
@@ -15,6 +16,7 @@ interface ReportStageProps {
 
 const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, darkMode, toggleTheme }) => {
   const [report, setReport] = useState<ReportData | null>(null);
+  const [exportStatus, setExportStatus] = useState<'IDLE' | 'SUCCESS'>('IDLE');
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -28,6 +30,43 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
     fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleATSExport = () => {
+      // REAL EXPORT: Generate a JSON blob of the full candidate profile and download it
+      // This is a standard way to export data to external systems (Workday/Greenhouse) via file import
+      try {
+          const exportData = {
+              metadata: {
+                  candidateName: context.candidateName,
+                  jobRole: context.jobDescription?.name || "Unknown Role",
+                  timestamp: new Date().toISOString(),
+                  exporter: "ProbeLensAI v2.5"
+              },
+              scores: report,
+              transcript_log: history.map(h => ({
+                  question: h.question,
+                  answer: h.transcript,
+                  metrics: h.analysis
+              }))
+          };
+
+          const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${context.candidateName.replace(/\s+/g, '_')}_ProbeLens_Export.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          setExportStatus('SUCCESS');
+          setTimeout(() => setExportStatus('IDLE'), 3000);
+      } catch (e) {
+          console.error("Export failed", e);
+          alert("Failed to export data.");
+      }
+  };
 
   if (!report) {
     return (
@@ -119,11 +158,18 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
                   {darkMode ? <Icons.Sun className="w-5 h-5"/> : <Icons.Moon className="w-5 h-5"/>}
                 </button>
                 <button 
-                onClick={() => generatePDF(report, context)}
-                className="bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+                  onClick={handleATSExport}
+                  className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
                 >
-                <Icons.Download className="w-4 h-4" />
-                <span>Download PDF</span>
+                    {exportStatus === 'SUCCESS' ? <Icons.CheckCircle className="w-4 h-4 text-green-500" /> : <Icons.Upload className="w-4 h-4" />}
+                    <span>{exportStatus === 'SUCCESS' ? 'Exported' : 'Export JSON Data'}</span>
+                </button>
+                <button 
+                  onClick={() => generatePDF(report, context)}
+                  className="bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+                >
+                  <Icons.Download className="w-4 h-4" />
+                  <span>Download PDF</span>
                 </button>
              </div>
           </div>

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { Icons } from '../constants';
 import { AppStage } from '../types';
+import { auth, googleProvider } from '../services/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth';
 
 interface HomeProps {
   setStage: (stage: AppStage) => void;
@@ -23,44 +26,65 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate API delay
-    setTimeout(() => {
-      setIsLoading(false);
-
+    try {
       if (authMode === 'LOGIN') {
-        // Mock Login Logic
-        if (email && password.length >= 6) {
-           // Success
-           setStage(AppStage.SETUP);
-        } else {
-           setError('Invalid email or password. (Try password length > 5)');
-        }
+        await signInWithEmailAndPassword(auth, email, password);
+        // Auth state listener in parent will handle stage transition
       } else {
-        // Mock Signup Logic
-        if (email && password.length >= 6 && fullName && companyName) {
-            // Success
-            setStage(AppStage.SETUP);
-        } else {
-            setError('Please fill in all fields correctly.');
+        if (!fullName || !companyName) {
+            throw new Error("Please provide your Name and Company.");
         }
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, {
+            displayName: `${fullName}|${companyName}`
+        });
       }
-    }, 1500);
+      setStage(AppStage.SETUP);
+    } catch (err: any) {
+      console.error("Auth Error", err);
+      if (err.code === 'auth/invalid-credential') {
+          setError('Invalid email or password.');
+      } else if (err.code === 'auth/email-already-in-use') {
+          setError('This email is already registered.');
+      } else {
+          setError(err.message || "Authentication failed. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+      setError('');
+      setIsLoading(true);
+      try {
+          await signInWithPopup(auth, googleProvider);
+          setStage(AppStage.SETUP);
+      } catch (err: any) {
+          console.error("Google Auth Error", err);
+          if (err.code === 'auth/unauthorized-domain') {
+              const currentDomain = window.location.hostname;
+              setError(`DOMAIN BLOCKED: Go to Firebase Console -> Authentication -> Settings -> Authorized Domains. Add this domain: ${currentDomain}`);
+          } else if (err.code === 'auth/popup-closed-by-user') {
+              setError("Sign-in cancelled.");
+          } else {
+              setError("Failed to sign in with Google. " + (err.message || ""));
+          }
+      } finally {
+          setIsLoading(false);
+      }
   };
 
   const openAuth = (mode: AuthMode) => {
     setAuthMode(mode);
     setShowAuthModal(true);
     setError('');
-    // Reset fields
-    setEmail('');
-    setPassword('');
-    setFullName('');
-    setCompanyName('');
+    setPassword(''); 
   };
 
   return (
@@ -124,7 +148,7 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
           {/* Advanced Features Grid - Single Row with Increased Gap */}
           <div className="pt-8 border-t border-slate-200 dark:border-slate-800 w-full">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Core Capabilities</p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-8">
                 {/* Item 1 */}
                 <div className="flex flex-col items-start space-y-3">
                     <div className="bg-blue-100 dark:bg-blue-900/30 p-2.5 rounded-xl text-blue-600 dark:text-blue-400">
@@ -148,17 +172,6 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
                 </div>
 
                 {/* Item 3 */}
-                <div className="flex flex-col items-start space-y-3">
-                    <div className="bg-purple-100 dark:bg-purple-900/30 p-2.5 rounded-xl text-purple-600 dark:text-purple-400">
-                        <Icons.Target className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Zero Hallucination</h3>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug mt-1.5">Strict Resume & JD context.</p>
-                    </div>
-                </div>
-
-                {/* Item 4 */}
                 <div className="flex flex-col items-start space-y-3">
                     <div className="bg-green-100 dark:bg-green-900/30 p-2.5 rounded-xl text-green-600 dark:text-green-400">
                         <Icons.Activity className="w-5 h-5" />
@@ -239,6 +252,33 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
               <button onClick={() => setShowAuthModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">✕</button>
             </div>
             
+            {/* Google Login Button */}
+            <div className="mb-6">
+                 <button 
+                    onClick={handleGoogleLogin}
+                    type="button"
+                    className="w-full py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-white font-bold rounded-lg transition flex items-center justify-center space-x-3 shadow-sm"
+                  >
+                     {/* Google Logo */}
+                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.84z" fill="#FBBC05"/>
+                        <path d="M12 4.36c1.61 0 3.06.56 4.21 1.64l3.16-3.16C17.45 1.09 14.97 0 12 0 7.7 0 3.99 2.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    <span>Continue with Google</span>
+                  </button>
+            </div>
+
+            <div className="relative mb-6">
+                <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200 dark:border-slate-700"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-white dark:bg-slate-900 text-slate-500">Or continue with email</span>
+                </div>
+            </div>
+            
             <form onSubmit={handleAuth} className="space-y-4">
               
               {authMode === 'SIGNUP' && (
@@ -292,7 +332,7 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
                 />
               </div>
 
-              {error && <p className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-900">{error}</p>}
+              {error && <p className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-900 text-center font-bold">{error}</p>}
               
               <button 
                 type="submit" 
@@ -302,7 +342,7 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
                 {isLoading ? (
                   <Icons.Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  authMode === 'LOGIN' ? 'Sign In' : 'Get Started'
+                  authMode === 'LOGIN' ? 'Sign In' : 'Create Account'
                 )}
               </button>
 

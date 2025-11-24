@@ -15,7 +15,8 @@
     "react-dom": "^19.2.0",
     "jspdf-autotable": "^5.0.2",
     "recharts": "^3.5.0",
-    "jspdf": "^3.0.4"
+    "jspdf": "^3.0.4",
+    "firebase": "^12.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

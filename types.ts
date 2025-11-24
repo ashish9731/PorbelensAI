@@ -1,3 +1,4 @@
+
 export enum AppStage {
   HOME = 'HOME',
   SETUP = 'SETUP',
@@ -19,9 +20,42 @@ export interface InterviewContextData {
   candidateName: string;
 }
 
+export interface CandidateProfile {
+  id: string;
+  name: string;
+  resume: FileData;
+  status: 'READY' | 'COMPLETED';
+}
+
+export interface InterviewBatch {
+  id: string;
+  jobTitle: string;
+  jobDescription: FileData;
+  candidates: CandidateProfile[];
+  createdAt: number;
+}
+
 export type AnswerQuality = 'Basic' | 'Intermediate' | 'Expert';
 export type IntegrityStatus = 'Clean' | 'Suspicious';
 export type QuestionComplexity = 'Basic' | 'Intermediate' | 'Expert';
+
+export interface CodeAnalysisData {
+  language: string;
+  timeComplexity: string; // e.g. O(n)
+  spaceComplexity: string; // e.g. O(1)
+  bugs: string[];
+  suggestions: string[];
+  score: number; // 0-100
+}
+
+export interface CodingChallenge {
+  title: string;
+  description: string;
+  difficulty: 'Intermediate' | 'Expert';
+  solutionCode: string; // The correct code
+  expectedTimeComplexity: string;
+  keyConcepts: string[];
+}
 
 export interface AnalysisMetrics {
   technicalAccuracy: number; // 0-100
@@ -39,6 +73,7 @@ export interface AnalysisMetrics {
     flaggedReason?: string; // e.g., "Eyes darting off-screen", "Robotic tone"
   };
   answerQuality: AnswerQuality;
+  codeAnalysis?: CodeAnalysisData; // Optional, only if code was submitted this turn
 }
 
 export interface InterviewTurn {
@@ -48,6 +83,7 @@ export interface InterviewTurn {
   answerAudioBase64?: string; 
   answerVideoFrameBase64?: string;
   transcript: string;
+  submittedCode?: string; // The raw code text
   analysis: AnalysisMetrics;
   interviewerNotes?: string;
 }
@@ -61,6 +97,7 @@ export interface ReportData {
     nonFunctional: number;
     communication: number;
     technical: number;
+    coding: number; // New Category
   };
   summary: string;
   psychologicalProfile: string;
