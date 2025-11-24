@@ -1,14 +1,15 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
+// Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyB1-pdmfM3Pk2zSIvayI5x0b34LhSQU1MY",
-  authDomain: "resumeace-fa6d2.firebaseapp.com",
-  projectId: "resumeace-fa6d2",
-  storageBucket: "resumeace-fa6d2.firebasestorage.app",
-  messagingSenderId: "737330398575",
-  appId: "1:737330398575:web:2facfc444fdc03479e549a",
-  measurementId: "G-PLMRRE62R3"
+  apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
+  authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: (import.meta as any).env.VITE_FIREBASE_APP_ID,
+  measurementId: (import.meta as any).env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
