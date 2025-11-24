@@ -178,7 +178,7 @@ export const generateFinalReport = async (
           },
           summary: { type: Type.STRING },
           recommendation: { type: Type.STRING, enum: ['HIRE', 'NO_HIRE', 'STRONG_HIRE', 'MAYBE'] },
-          turns: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {} } }
+          turns: { type: Type.ARRAY, items: { type: Type.OBJECT } }
         }
       }
     }
