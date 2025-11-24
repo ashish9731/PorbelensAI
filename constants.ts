@@ -23,7 +23,11 @@ import {
   Settings,
   Camera,
   RefreshCw,
-  Activity
+  Activity,
+  Shield,
+  Zap,
+  Layers,
+  Target
 } from 'lucide-react';
 
 export const Icons = {
@@ -51,5 +55,9 @@ export const Icons = {
   Settings,
   Camera,
   RefreshCw,
-  Activity
+  Activity,
+  Shield,
+  Zap,
+  Layers,
+  Target
 };
