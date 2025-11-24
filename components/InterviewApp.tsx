@@ -4,7 +4,7 @@ import Home from './Home';
 import SetupStage from './SetupStage';
 import InterviewStage from './InterviewStage';
 import ReportStage from './ReportStage';
-import { auth } from '../services/firebase';
+import app, { auth } from '../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 const InterviewApp: React.FC = () => {
@@ -30,6 +30,13 @@ const InterviewApp: React.FC = () => {
 
   // Auth Persistence Listener
   useEffect(() => {
+    // Check if Firebase auth is properly initialized
+    if (!auth || !onAuthStateChanged) {
+      // Firebase not available, skip auth check
+      setIsAuthChecking(false);
+      return;
+    }
+    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         // User is signed in, skip Home if currently at Home
@@ -40,7 +47,11 @@ const InterviewApp: React.FC = () => {
       setIsAuthChecking(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, [stage]);
 
   const toggleTheme = () => setDarkMode(!darkMode);
