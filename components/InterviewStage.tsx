@@ -30,10 +30,14 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
   const [showSolution, setShowSolution] = useState(false);
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
 
+  // Workflow State
   const [isRecording, setIsRecording] = useState(false);
   const [processingState, setProcessingState] = useState<'IDLE' | 'GENERATING_QUESTION' | 'ANALYZING_BACKGROUND'>('IDLE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
+  // Next Question Buffer
+  const [nextQuestionData, setNextQuestionData] = useState<{ text: string, complexity: QuestionComplexity } | null>(null);
+
   const webcamRef = useRef<WebcamRef>(null);
 
   const handleSignOut = () => {
@@ -53,22 +57,34 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
     webcamRef.current?.stopRecording(); // Triggers onDataAvailable
   };
 
+  const handleProceedToNext = () => {
+      if (nextQuestionData) {
+          setCurrentQuestion(nextQuestionData.text);
+          setCurrentComplexity(nextQuestionData.complexity);
+          setNextQuestionData(null);
+      }
+  };
+
   const handleGenerateChallenge = async () => {
       setIsGeneratingChallenge(true);
+      setErrorMsg(null);
       try {
           const challenge = await generateCodingChallenge(context);
+          if (challenge.title === 'Error Generating Challenge') {
+             throw new Error(challenge.description);
+          }
           setActiveChallenge(challenge);
           setCurrentQuestion(challenge.description); // Auto-set the question
           setCurrentComplexity(challenge.difficulty);
-      } catch (e) {
+      } catch (e: any) {
           console.error("Challenge gen failed", e);
+          setErrorMsg(e.message || "Failed to generate challenge.");
       } finally {
           setIsGeneratingChallenge(false);
       }
   };
 
   const processAnswerData = async (mediaBlob: Blob) => {
-    // Validate Blob Size
     if (mediaBlob.size < 1000) {
         setErrorMsg("No audio detected. Please ensure the microphone is working.");
         setIsRecording(false);
@@ -76,6 +92,7 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
     }
 
     setProcessingState('GENERATING_QUESTION');
+    setErrorMsg(null);
     
     try {
       const mediaBase64 = await blobToBase64(mediaBlob);
@@ -106,7 +123,8 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
             }
           };
           setHistory(prev => [...prev, failedTurn]);
-          setCurrentQuestion(fastResult.nextQuestion); 
+          // Even on fail, we give the AI's fallback question
+          setNextQuestionData({ text: fastResult.nextQuestion, complexity: 'Basic' });
           setProcessingState('IDLE');
           return;
       }
@@ -128,8 +146,9 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
       };
 
       setHistory(prev => [...prev, newTurn]);
-      setCurrentQuestion(fastResult.nextQuestion);
-      setCurrentComplexity(fastResult.nextComplexity);
+      
+      // Buffer the next question instead of setting it immediately
+      setNextQuestionData({ text: fastResult.nextQuestion, complexity: fastResult.nextComplexity });
       
       // Reset Code Buffer if submitted
       if (codeSubmitted) setCodeBuffer('');
@@ -151,9 +170,9 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
             setProcessingState('IDLE');
         });
       
-    } catch (err) {
+    } catch (err: any) {
       console.error("Critical Failure in Phase 1", err);
-      setErrorMsg("Connection lost with AI service.");
+      setErrorMsg(err.message || "Connection lost with AI service.");
       setProcessingState('IDLE');
     }
   };
@@ -237,8 +256,8 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
                         "{currentQuestion}"
                         </p>
                         {errorMsg && (
-                            <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center text-red-600 dark:text-red-400 text-sm">
-                                <Icons.AlertCircle className="w-4 h-4 mr-2" />
+                            <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center text-red-600 dark:text-red-400 text-sm font-semibold">
+                                <Icons.AlertCircle className="w-5 h-5 mr-2" />
                                 {errorMsg}
                             </div>
                         )}
@@ -255,7 +274,20 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
 
           {/* Controls */}
           <div className="grid grid-cols-1 gap-4">
-             {!isRecording ? (
+             {nextQuestionData ? (
+                 <button 
+                  onClick={handleProceedToNext}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white rounded-xl py-6 shadow-lg transition-all transform hover:scale-[1.01] active:scale-95 flex items-center justify-center space-x-4 animate-bounce-short"
+                >
+                  <div className="bg-white/20 p-3 rounded-full">
+                      <Icons.ArrowRight className="w-6 h-6" />
+                  </div>
+                   <div className="text-left">
+                      <span className="block text-xs opacity-70 uppercase tracking-wider font-bold mb-0.5">Response Analyzed</span>
+                      <span className="block text-xl font-bold">Proceed to Next Question</span>
+                  </div>
+                </button>
+             ) : !isRecording ? (
                 <button 
                   onClick={handleStartRecording}
                   disabled={processingState === 'GENERATING_QUESTION'}

@@ -25,11 +25,13 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
   const [resumeFiles, setResumeFiles] = useState<FileList | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Helper to process analysis sequentially to avoid Rate Limits
   const processBatchAnalysis = async (batchId: string, candidates: CandidateProfile[], jdData: any) => {
       // Create a local copy to iterate
       const queue = [...candidates];
+      setApiError(null);
 
       for (const candidate of queue) {
           try {
@@ -60,8 +62,12 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                   };
               }));
 
-          } catch (e) {
+          } catch (e: any) {
               console.error(`Analysis failed for ${candidate.name}`, e);
+              if (e.message.includes("403") || e.message.includes("leaked")) {
+                  setApiError(e.message); // Show global API error
+              }
+
               // Set to error state but don't crash
               setBatches(prev => prev.map(b => {
                   if (b.id !== batchId) return b;
@@ -87,6 +93,7 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
 
     setIsProcessing(true);
     setError(null);
+    setApiError(null);
 
     try {
         // 1. Process JD
@@ -297,6 +304,15 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                     {error && (
                         <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 text-xs rounded-lg flex items-center">
                             <Icons.AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" /> {error}
+                        </div>
+                    )}
+                    
+                    {apiError && (
+                        <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 text-xs rounded-lg flex items-center border border-red-200">
+                            <Icons.AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" /> 
+                            <span>
+                                <strong>API ERROR:</strong> {apiError}
+                            </span>
                         </div>
                     )}
 
