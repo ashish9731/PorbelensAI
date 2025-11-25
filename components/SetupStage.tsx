@@ -1,10 +1,12 @@
 
+
 import React, { useState } from 'react';
 import { Icons } from '../constants';
 import { AppStage, InterviewContextData, InterviewBatch, CandidateProfile } from '../types';
 import { processFile } from '../utils';
 import { auth } from '../services/firebase';
 import { signOut } from 'firebase/auth';
+import { analyzeResumeMatch } from '../services/geminiService';
 
 interface SetupStageProps {
   setContext: (data: InterviewContextData) => void;
@@ -54,7 +56,8 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                 id: Math.random().toString(36).substr(2, 9),
                 name: file.name.replace(/\.[^/.]+$/, ""), // Remove extension for name
                 resume: resumeData,
-                status: 'READY'
+                status: 'READY',
+                isAnalyzing: true // Start analysis immediately
             });
         }
 
@@ -69,6 +72,42 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
 
         setBatches(prev => [newBatch, ...prev]);
         
+        // 4. Trigger Async Analysis for each candidate in the new batch
+        // We do this AFTER state update so UI shows immediately
+        const batchId = newBatch.id;
+        
+        // Process sequentially to be nice to API limits, or parallel if quota allows.
+        // Parallel for "Real Time" feel.
+        candidates.forEach(async (candidate) => {
+            try {
+                const analysis = await analyzeResumeMatch(candidate.resume, jdData);
+                setBatches(currentBatches => currentBatches.map(b => {
+                    if (b.id !== batchId) return b;
+                    return {
+                        ...b,
+                        candidates: b.candidates.map(c => 
+                            c.id === candidate.id 
+                            ? { ...c, analysis, isAnalyzing: false } 
+                            : c
+                        )
+                    };
+                }));
+            } catch (e) {
+                console.error("Analysis failed for", candidate.name);
+                 setBatches(currentBatches => currentBatches.map(b => {
+                    if (b.id !== batchId) return b;
+                    return {
+                        ...b,
+                        candidates: b.candidates.map(c => 
+                            c.id === candidate.id 
+                            ? { ...c, isAnalyzing: false } 
+                            : c
+                        )
+                    };
+                }));
+            }
+        });
+
         // Reset Form
         setJobTitle('');
         setJdFile(null);
@@ -100,6 +139,12 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
           setStage(AppStage.HOME);
       });
   };
+
+  const getRecommendationColor = (rec: string) => {
+      if (rec === 'Interview') return 'bg-green-100 text-green-700 border-green-200';
+      if (rec === 'Shortlist') return 'bg-blue-100 text-blue-700 border-blue-200';
+      return 'bg-red-100 text-red-700 border-red-200';
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 flex flex-col">
@@ -241,7 +286,7 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                         disabled={isProcessing}
                         className="w-full py-3 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-xl font-bold transition shadow-lg flex items-center justify-center"
                     >
-                        {isProcessing ? <Icons.Loader2 className="animate-spin w-5 h-5" /> : "Queue Batch"}
+                        {isProcessing ? <Icons.Loader2 className="animate-spin w-5 h-5" /> : "Queue Batch & Analyze"}
                     </button>
                 </div>
             </div>
@@ -287,22 +332,40 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                             {/* Candidate List */}
                             <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {batch.candidates.map((candidate) => (
-                                    <div key={candidate.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                    <div key={candidate.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition gap-4">
                                         <div className="flex items-center space-x-4">
-                                            <div className="w-10 h-10 rounded-full bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 font-bold">
+                                            <div className="w-10 h-10 rounded-full bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 font-bold flex-shrink-0">
                                                 {candidate.name.charAt(0).toUpperCase()}
                                             </div>
                                             <div>
                                                 <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{candidate.name}</p>
-                                                <p className="text-xs text-slate-500 flex items-center">
+                                                <p className="text-xs text-slate-500 flex items-center mb-1">
                                                     <Icons.FileText className="w-3 h-3 mr-1" /> {candidate.resume.name}
                                                 </p>
+                                                {/* Pre-Interview Analysis Tags */}
+                                                {candidate.isAnalyzing ? (
+                                                    <span className="text-[10px] text-cyan-600 flex items-center animate-pulse">
+                                                        <Icons.Loader2 className="w-3 h-3 mr-1 animate-spin" /> Analyzing Match...
+                                                    </span>
+                                                ) : candidate.analysis ? (
+                                                    <div className="flex flex-wrap gap-2 mt-1">
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${getRecommendationColor(candidate.analysis.recommendation)}`}>
+                                                            {candidate.analysis.recommendation}
+                                                        </span>
+                                                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center">
+                                                            <Icons.FileText className="w-3 h-3 mr-1" /> Match: {candidate.analysis.resumeScore}%
+                                                        </span>
+                                                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center">
+                                                            <Icons.CheckCircle className="w-3 h-3 mr-1" /> ATS: {candidate.analysis.atsScore}%
+                                                        </span>
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </div>
 
                                         <button 
                                             onClick={() => handleLaunchInterview(batch, candidate)}
-                                            className="px-4 py-2 bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-700 text-white text-xs font-bold rounded-lg shadow-md flex items-center space-x-2 transition transform active:scale-95"
+                                            className="px-4 py-2 bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-700 text-white text-xs font-bold rounded-lg shadow-md flex items-center space-x-2 transition transform active:scale-95 whitespace-nowrap self-start md:self-center"
                                         >
                                             <span>Start Interview</span>
                                             <Icons.ArrowRight className="w-3 h-3" />

@@ -1,6 +1,7 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { InterviewContextData, InterviewTurn, AnalysisMetrics, ReportData, AnswerQuality, QuestionComplexity, CodeAnalysisData, CodingChallenge } from "../types";
+import { InterviewContextData, InterviewTurn, AnalysisMetrics, ReportData, AnswerQuality, QuestionComplexity, CodeAnalysisData, CodingChallenge, PreInterviewAnalysis, FileData } from "../types";
 import { API_KEY as ENV_KEY } from '../env';
 
 export const checkApiKey = () => {
@@ -26,6 +27,57 @@ const attachFilePart = (fileData: any, label: string) => {
         return [{ text: `${label.toUpperCase()} CONTENT:\n${fileData.textContent.substring(0, 20000)}` }];
     }
     return [];
+};
+
+// FEATURE: Pre-Interview Resume Analysis
+export const analyzeResumeMatch = async (resume: FileData, jd: FileData): Promise<PreInterviewAnalysis> => {
+    const ai = getAI();
+    const model = "gemini-2.5-flash"; // Fast enough for batch processing
+
+    const prompt = `
+    ROLE: Expert Technical Recruiter & ATS System.
+    TASK: Analyze the Candidate Resume against the Job Description.
+    
+    METRICS TO CALCULATE:
+    1. Resume Score (0-100): How well do the skills match the JD requirements?
+    2. ATS Score (0-100): Is the resume formatted well? Does it contain keywords from the JD?
+    3. Recommendation: Should we interview this candidate?
+    4. Key Gap: What is the biggest missing skill?
+
+    OUTPUT JSON ONLY.
+    `;
+
+    const parts: any[] = [{ text: prompt }];
+    parts.push(...attachFilePart(jd, "Job Description"));
+    parts.push(...attachFilePart(resume, "Candidate Resume"));
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: { parts },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        resumeScore: { type: Type.NUMBER },
+                        atsScore: { type: Type.NUMBER },
+                        recommendation: { type: Type.STRING, enum: ["Interview", "Shortlist", "Reject"] },
+                        keyGap: { type: Type.STRING }
+                    }
+                }
+            }
+        });
+        return JSON.parse(response.text || "{}");
+    } catch (e) {
+        console.error("Resume Analysis Failed", e);
+        return {
+            resumeScore: 0,
+            atsScore: 0,
+            recommendation: 'Reject',
+            keyGap: "Analysis Failed"
+        };
+    }
 };
 
 // PHASE 1: FAST execution (Transcript + Next Question)
