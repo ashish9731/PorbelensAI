@@ -5,6 +5,8 @@ import WebcamRecorder, { WebcamRef } from './WebcamRecorder';
 import { generateFastNextQuestion, analyzeResponseDeeply, generateCodingChallenge } from '../services/geminiService';
 import { blobToBase64 } from '../utils';
 import { Icons } from '../constants';
+import { auth } from '../services/firebase';
+import { signOut } from 'firebase/auth';
 
 interface InterviewStageProps {
   context: InterviewContextData;
@@ -33,6 +35,12 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   const webcamRef = useRef<WebcamRef>(null);
+
+  const handleSignOut = () => {
+      signOut(auth).then(() => {
+          setStage(AppStage.HOME);
+      });
+  };
 
   const handleStartRecording = () => {
     setIsRecording(true);
@@ -184,6 +192,9 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
           <div className="flex items-center space-x-3">
              <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400">
                 {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
+             </button>
+             <button onClick={handleSignOut} className="text-xs font-bold text-red-500 hover:text-red-600 px-3 py-1.5 border border-red-200 dark:border-red-900/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                 Sign Out
              </button>
              <button 
                 onClick={() => setStage(AppStage.REPORT)} 

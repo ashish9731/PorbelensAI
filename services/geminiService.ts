@@ -63,7 +63,7 @@ export const generateFastNextQuestion = async (
   4. GENERATE the Next Question:
      - The next question must be logically connected to the candidate's last answer.
      - If they failed to answer, ask them to repeat or clarify.
-     - Use the Job Description and Resume (provided in context) to guide the topic.
+     - Use the Job Description, Resume, AND Knowledge Base (provided in context) to guide the topic.
 
   OUTPUT JSON ONLY.
   `;
@@ -73,6 +73,7 @@ export const generateFastNextQuestion = async (
   // Attach Context
   if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
   if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
+  if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Company Knowledge Base"));
   
   // Attach Audio/Video - CRITICAL FIX: Use video/webm as that is what MediaRecorder produces
   parts.push({ inlineData: { mimeType: "video/webm", data: mediaBase64 } });
@@ -139,14 +140,19 @@ export const analyzeCodeSnippet = async (
     2. Identify potential bugs or edge cases.
     3. Suggest improvements.
     4. Score the code quality (0-100).
+    5. Check against uploaded Knowledge Base standards if applicable.
     
     OUTPUT JSON ONLY.
     `;
 
+    // Add context to code analysis
+    const parts: any[] = [{ text: prompt }];
+    if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Coding Standards / Knowledge Base"));
+
     try {
         const response = await ai.models.generateContent({
             model,
-            contents: { parts: [{ text: prompt }] },
+            contents: { parts },
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -179,10 +185,11 @@ export const generateCodingChallenge = async (context: InterviewContextData): Pr
 
   const prompt = `
   ROLE: Technical Lead / Hiring Manager.
-  TASK: Create a relevant Coding Challenge for the candidate based on their profile and the JD.
+  TASK: Create a relevant Coding Challenge for the candidate based on their profile, the JD, and Company Knowledge Base.
   
   GOAL:
   - The problem should test core skills required in the Job Description.
+  - It should align with the technical stack mentioned in the Knowledge Base (if provided).
   - It should be solvable in 10-15 minutes.
   - Provide a "Solution Key" for the non-technical interviewer.
   
@@ -192,6 +199,7 @@ export const generateCodingChallenge = async (context: InterviewContextData): Pr
   const parts: any[] = [{ text: prompt }];
   if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
   if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
+  if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Company Knowledge Base"));
 
   try {
     const response = await ai.models.generateContent({
@@ -268,7 +276,7 @@ export const analyzeResponseDeeply = async (
      - Check the audio: Are there typing sounds? Is the voice robotic?
   
   2. CONTENT ANALYSIS:
-     - Compare the transcript against the Candidate's Resume (context). Does it align?
+     - Compare the transcript against the Candidate's Resume and Job Description and Knowledge Base. Does it align?
      - Verify technical accuracy (0-100).
      - Assess sentiment (Confidence vs Anxiety).
      - Identify Key Skills mentioned.
@@ -280,6 +288,8 @@ export const analyzeResponseDeeply = async (
   
   // Attach Context
   if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
+  if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
+  if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Knowledge Base"));
 
   // Re-attach video/audio
   parts.push({ inlineData: { mimeType: "video/webm", data: mediaBase64 } });
@@ -388,6 +398,7 @@ export const generateFinalReport = async (
 
   if (context.resume) parts.push(...attachFilePart(context.resume, "Resume Reference"));
   if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Requirements"));
+  if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Knowledge Base"));
 
   try {
       const response = await ai.models.generateContent({

@@ -31,6 +31,7 @@ export interface InterviewBatch {
   id: string;
   jobTitle: string;
   jobDescription: FileData;
+  knowledgeBase?: FileData; // Added Knowledge Base
   candidates: CandidateProfile[];
   createdAt: number;
 }

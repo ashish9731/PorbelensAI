@@ -5,6 +5,8 @@ import { generateFinalReport } from '../services/geminiService';
 import { generatePDF } from '../services/pdfService';
 import { Icons } from '../constants';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+import { auth } from '../services/firebase';
+import { signOut } from 'firebase/auth';
 
 interface ReportStageProps {
   history: InterviewTurn[];
@@ -33,7 +35,6 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
 
   const handleATSExport = () => {
       // REAL EXPORT: Generate a JSON blob of the full candidate profile and download it
-      // This is a standard way to export data to external systems (Workday/Greenhouse) via file import
       try {
           const exportData = {
               metadata: {
@@ -68,6 +69,12 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
       }
   };
 
+  const handleSignOut = () => {
+      signOut(auth).then(() => {
+          setStage(AppStage.HOME);
+      });
+  };
+
   if (!report) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center transition-colors">
@@ -89,12 +96,20 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
             <p className="text-lg text-slate-600 dark:text-slate-300 max-w-md mb-8">
                 {report.summary || "No valid candidate responses were recorded. Analysis could not be performed."}
             </p>
-            <button 
-                onClick={() => setStage(AppStage.HOME)}
-                className="px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:opacity-90 transition"
-            >
-                Return to Home
-            </button>
+            <div className="flex space-x-4">
+                 <button 
+                    onClick={() => setStage(AppStage.HOME)}
+                    className="px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:opacity-90 transition"
+                >
+                    Return to Home
+                </button>
+                 <button 
+                    onClick={handleSignOut}
+                    className="px-8 py-3 border border-red-200 text-red-500 rounded-xl font-bold hover:bg-red-50 transition"
+                >
+                    Sign Out
+                </button>
+            </div>
         </div>
       );
   }
@@ -137,6 +152,11 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
                   <Icons.Brain className="w-5 h-5 text-white" />
               </div>
               <span className="text-lg font-bold text-slate-900 dark:text-white">ProbeLensAI</span>
+            </div>
+            <div className="flex items-center space-x-3">
+                 <button onClick={handleSignOut} className="text-xs font-bold text-red-500 hover:text-red-600 px-3 py-1.5 border border-red-200 dark:border-red-900/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                     Sign Out
+                 </button>
             </div>
          </div>
       </div>

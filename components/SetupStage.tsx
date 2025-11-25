@@ -1,7 +1,10 @@
+
 import React, { useState } from 'react';
 import { Icons } from '../constants';
 import { AppStage, InterviewContextData, InterviewBatch, CandidateProfile } from '../types';
 import { processFile } from '../utils';
+import { auth } from '../services/firebase';
+import { signOut } from 'firebase/auth';
 
 interface SetupStageProps {
   setContext: (data: InterviewContextData) => void;
@@ -17,6 +20,7 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
   // Form State for New Batch
   const [jobTitle, setJobTitle] = useState('');
   const [jdFile, setJdFile] = useState<File | null>(null);
+  const [kbFile, setKbFile] = useState<File | null>(null); // Knowledge Base State
   const [resumeFiles, setResumeFiles] = useState<FileList | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +38,14 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
     try {
         // 1. Process JD
         const jdData = await processFile(jdFile);
+
+        // 2. Process KB (Optional)
+        let kbData = undefined;
+        if (kbFile) {
+            kbData = await processFile(kbFile);
+        }
         
-        // 2. Process Resumes
+        // 3. Process Resumes
         const candidates: CandidateProfile[] = [];
         for (let i = 0; i < resumeFiles.length; i++) {
             const file = resumeFiles[i];
@@ -52,6 +62,7 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
             id: Date.now().toString(),
             jobTitle,
             jobDescription: jdData,
+            knowledgeBase: kbData, // Save KB to batch
             candidates,
             createdAt: Date.now()
         };
@@ -61,6 +72,7 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
         // Reset Form
         setJobTitle('');
         setJdFile(null);
+        setKbFile(null);
         setResumeFiles(null);
 
     } catch (err: any) {
@@ -73,14 +85,20 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
 
   const handleLaunchInterview = (batch: InterviewBatch, candidate: CandidateProfile) => {
       // SET GLOBAL CONTEXT FOR THE AI
-      // This ensures no fake data - we are injecting specific resume & JD
+      // This ensures no fake data - we are injecting specific resume & JD & KB
       setContext({
           candidateName: candidate.name,
           jobDescription: batch.jobDescription,
           resume: candidate.resume,
-          knowledgeBase: null // Can be added to batch later if needed
+          knowledgeBase: batch.knowledgeBase || null // Inject KB
       });
       setStage(AppStage.INTERVIEW);
+  };
+
+  const handleSignOut = () => {
+      signOut(auth).then(() => {
+          setStage(AppStage.HOME);
+      });
   };
 
   return (
@@ -96,9 +114,14 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
             <Icons.Brain className="w-6 h-6 text-cyan-500" />
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Recruiter Dashboard</h1>
           </div>
-          <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition text-slate-900 dark:text-white">
-            {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
-          </button>
+          <div className="flex items-center space-x-3">
+             <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition text-slate-900 dark:text-white">
+                {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
+             </button>
+             <button onClick={handleSignOut} className="text-xs font-bold text-red-500 hover:text-red-600 px-3 py-1.5 border border-red-200 dark:border-red-900/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                 Sign Out
+             </button>
+          </div>
         </div>
       </div>
 
@@ -142,6 +165,34 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                                     <div className="flex flex-col items-center text-slate-400">
                                         <Icons.FileText className="w-6 h-6 mb-1" />
                                         <span className="text-xs">Upload JD (PDF/Text)</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Knowledge Base Input */}
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center justify-between">
+                            Knowledge Base
+                            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded text-slate-400">Optional</span>
+                        </label>
+                        <div className="mt-1 relative group">
+                            <input 
+                                type="file" 
+                                onChange={(e) => e.target.files && setKbFile(e.target.files[0])}
+                                accept=".pdf,.txt,.md"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <div className={`border-2 border-dashed rounded-lg p-4 flex items-center justify-center transition-colors ${kbFile ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/10' : 'border-slate-300 dark:border-slate-700 hover:border-cyan-500'}`}>
+                                {kbFile ? (
+                                    <div className="flex items-center text-blue-600 text-sm font-medium">
+                                        <Icons.CheckCircle className="w-4 h-4 mr-2" /> {kbFile.name}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center text-slate-400">
+                                        <Icons.BookOpen className="w-6 h-6 mb-1" />
+                                        <span className="text-xs">Upload KB (Docs/Repo)</span>
                                     </div>
                                 )}
                             </div>
@@ -216,10 +267,14 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">{batch.jobTitle}</h3>
                                     <p className="text-xs text-slate-500 flex items-center mt-1">
                                         <Icons.FileText className="w-3 h-3 mr-1" /> {batch.jobDescription.name}
+                                        {batch.knowledgeBase && (
+                                            <>
+                                                <span className="mx-2">•</span>
+                                                <Icons.BookOpen className="w-3 h-3 mr-1 text-blue-500" /> {batch.knowledgeBase.name}
+                                            </>
+                                        )}
                                         <span className="mx-2">•</span>
                                         {batch.candidates.length} Candidates
-                                        <span className="mx-2">•</span>
-                                        Batch ID: #{batch.id.substr(8)}
                                     </p>
                                 </div>
                                 <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-xs font-bold">

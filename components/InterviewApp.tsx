@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { AppStage, InterviewContextData, InterviewTurn } from '../types';
 import Home from './Home';
 import SetupStage from './SetupStage';
 import InterviewStage from './InterviewStage';
 import ReportStage from './ReportStage';
-import app, { auth } from '../services/firebase';
+import { auth } from '../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 const InterviewApp: React.FC = () => {
@@ -18,6 +19,7 @@ const InterviewApp: React.FC = () => {
   const [history, setHistory] = useState<InterviewTurn[]>([]);
   const [darkMode, setDarkMode] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
 
   // Theme Init
   useEffect(() => {
@@ -30,34 +32,29 @@ const InterviewApp: React.FC = () => {
 
   // Auth Persistence Listener
   useEffect(() => {
-    // Check if Firebase auth is properly initialized
-    if (!auth || !onAuthStateChanged) {
-      // Firebase not available, skip auth check
-      setIsAuthChecking(false);
-      return;
-    }
-    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // User is signed in, skip Home if currently at Home
-        if (stage === AppStage.HOME) {
+        // Only redirect on initial load if user is logged in
+        if (!hasCheckedAuth && stage === AppStage.HOME) {
             setStage(AppStage.SETUP);
         }
-      } 
+      } else {
+        // If logged out, ensure we go home
+        setStage(AppStage.HOME);
+      }
+      setHasCheckedAuth(true);
       setIsAuthChecking(false);
     });
 
-    return () => {
-      if (unsubscribe && typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [stage]);
+    return () => unsubscribe();
+  }, [hasCheckedAuth, stage]);
 
   const toggleTheme = () => setDarkMode(!darkMode);
 
   if (isAuthChecking) {
-      return <div className="min-h-screen bg-slate-50 dark:bg-slate-950"></div>; // Clean loading state
+      return <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>;
   }
 
   return (
