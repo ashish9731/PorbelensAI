@@ -1,6 +1,5 @@
 
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icons } from '../constants';
 import { AppStage, InterviewContextData, InterviewBatch, CandidateProfile } from '../types';
 import { processFile } from '../utils';
@@ -27,6 +26,58 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper to process analysis sequentially to avoid Rate Limits
+  const processBatchAnalysis = async (batchId: string, candidates: CandidateProfile[], jdData: any) => {
+      // Create a local copy to iterate
+      const queue = [...candidates];
+
+      for (const candidate of queue) {
+          try {
+              // 1. Set status to analyzing in UI
+              setBatches(prev => prev.map(b => {
+                  if (b.id !== batchId) return b;
+                  return {
+                      ...b,
+                      candidates: b.candidates.map(c => c.id === candidate.id ? { ...c, isAnalyzing: true } : c)
+                  };
+              }));
+
+              // 2. Perform Real AI Analysis
+              // We add a small delay to be safe with API quotas
+              await new Promise(r => setTimeout(r, 500)); 
+              const analysis = await analyzeResumeMatch(candidate.resume, jdData);
+
+              // 3. Update result
+              setBatches(prev => prev.map(b => {
+                  if (b.id !== batchId) return b;
+                  return {
+                      ...b,
+                      candidates: b.candidates.map(c => 
+                          c.id === candidate.id 
+                          ? { ...c, analysis, isAnalyzing: false } 
+                          : c
+                      )
+                  };
+              }));
+
+          } catch (e) {
+              console.error(`Analysis failed for ${candidate.name}`, e);
+              // Set to error state but don't crash
+              setBatches(prev => prev.map(b => {
+                  if (b.id !== batchId) return b;
+                  return {
+                      ...b,
+                      candidates: b.candidates.map(c => 
+                          c.id === candidate.id 
+                          ? { ...c, isAnalyzing: false } 
+                          : c
+                      )
+                  };
+              }));
+          }
+      }
+  };
+
   // Helper to create a batch
   const handleCreateBatch = async () => {
     if (!jobTitle || !jdFile || !resumeFiles || resumeFiles.length === 0) {
@@ -47,7 +98,7 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
             kbData = await processFile(kbFile);
         }
         
-        // 3. Process Resumes
+        // 3. Process Resumes (Initial Load)
         const candidates: CandidateProfile[] = [];
         for (let i = 0; i < resumeFiles.length; i++) {
             const file = resumeFiles[i];
@@ -57,7 +108,7 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                 name: file.name.replace(/\.[^/.]+$/, ""), // Remove extension for name
                 resume: resumeData,
                 status: 'READY',
-                isAnalyzing: true // Start analysis immediately
+                isAnalyzing: false // Start as false, the sequencer will toggle it
             });
         }
 
@@ -72,41 +123,9 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
 
         setBatches(prev => [newBatch, ...prev]);
         
-        // 4. Trigger Async Analysis for each candidate in the new batch
-        // We do this AFTER state update so UI shows immediately
-        const batchId = newBatch.id;
-        
-        // Process sequentially to be nice to API limits, or parallel if quota allows.
-        // Parallel for "Real Time" feel.
-        candidates.forEach(async (candidate) => {
-            try {
-                const analysis = await analyzeResumeMatch(candidate.resume, jdData);
-                setBatches(currentBatches => currentBatches.map(b => {
-                    if (b.id !== batchId) return b;
-                    return {
-                        ...b,
-                        candidates: b.candidates.map(c => 
-                            c.id === candidate.id 
-                            ? { ...c, analysis, isAnalyzing: false } 
-                            : c
-                        )
-                    };
-                }));
-            } catch (e) {
-                console.error("Analysis failed for", candidate.name);
-                 setBatches(currentBatches => currentBatches.map(b => {
-                    if (b.id !== batchId) return b;
-                    return {
-                        ...b,
-                        candidates: b.candidates.map(c => 
-                            c.id === candidate.id 
-                            ? { ...c, isAnalyzing: false } 
-                            : c
-                        )
-                    };
-                }));
-            }
-        });
+        // 4. Trigger Sequential Analysis
+        // Do not await this, let it run in background updates
+        processBatchAnalysis(newBatch.id, candidates, jdData);
 
         // Reset Form
         setJobTitle('');
@@ -358,8 +377,15 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
                                                         <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center">
                                                             <Icons.CheckCircle className="w-3 h-3 mr-1" /> ATS: {candidate.analysis.atsScore}%
                                                         </span>
+                                                        {candidate.analysis.keyGap && candidate.analysis.keyGap !== 'None' && (
+                                                            <span className="text-[10px] bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded text-red-500 flex items-center">
+                                                                ! Gap: {candidate.analysis.keyGap.substring(0, 30)}...
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                ) : null}
+                                                ) : (
+                                                    <span className="text-[10px] text-slate-400">Queued</span>
+                                                )}
                                             </div>
                                         </div>
 

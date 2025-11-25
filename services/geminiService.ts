@@ -42,7 +42,7 @@ export const analyzeResumeMatch = async (resume: FileData, jd: FileData): Promis
     1. Resume Score (0-100): How well do the skills match the JD requirements?
     2. ATS Score (0-100): Is the resume formatted well? Does it contain keywords from the JD?
     3. Recommendation: Should we interview this candidate?
-    4. Key Gap: What is the biggest missing skill?
+    4. Key Gap: What is the biggest missing skill? (Short phrase)
 
     OUTPUT JSON ONLY.
     `;
@@ -68,14 +68,15 @@ export const analyzeResumeMatch = async (resume: FileData, jd: FileData): Promis
                 }
             }
         });
-        return JSON.parse(response.text || "{}");
-    } catch (e) {
+        const resText = response.text || "{}";
+        return JSON.parse(resText);
+    } catch (e: any) {
         console.error("Resume Analysis Failed", e);
         return {
             resumeScore: 0,
             atsScore: 0,
             recommendation: 'Reject',
-            keyGap: "Analysis Failed"
+            keyGap: `Analysis Error: ${e.message || "Unknown"}`
         };
     }
 };
