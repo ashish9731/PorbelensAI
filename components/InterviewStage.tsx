@@ -176,17 +176,13 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-4">
               <div 
-                className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition mr-2 md:mr-4"
+                className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition"
                 onClick={() => setStage(AppStage.HOME)}
               >
-                 <div className="bg-cyan-500 p-1 rounded-md">
-                    <Icons.Brain className="w-4 h-4 text-white" />
+                 <div className="bg-cyan-500 p-1.5 rounded-lg">
+                    <Icons.Brain className="w-5 h-5 text-white" />
                  </div>
-                 <span className="text-lg font-bold tracking-tight hidden lg:block text-slate-900 dark:text-white">ProbeLensAI</span>
-              </div>
-              <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden md:block"></div>
-              <div className="bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border border-cyan-200 dark:border-cyan-800 flex items-center">
-                <Icons.Cpu className="w-3 h-3 mr-1" /> HR Command Center
+                 <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">ProbeLensAI</span>
               </div>
           </div>
           <div className="flex items-center space-x-3">

@@ -111,8 +111,10 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
             className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
             onClick={() => setStage(AppStage.HOME)}
           >
-            <Icons.Brain className="w-6 h-6 text-cyan-500" />
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Recruiter Dashboard</h1>
+            <div className="bg-cyan-500 p-1.5 rounded-lg">
+                <Icons.Brain className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-lg font-bold text-slate-900 dark:text-white">ProbeLensAI</span>
           </div>
           <div className="flex items-center space-x-3">
              <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition text-slate-900 dark:text-white">
