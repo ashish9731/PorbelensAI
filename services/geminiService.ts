@@ -2,11 +2,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { InterviewContextData, InterviewTurn, AnalysisMetrics, ReportData, AnswerQuality, QuestionComplexity, CodeAnalysisData, CodingChallenge, PreInterviewAnalysis, FileData } from "../types";
 
 const getAI = () => {
-    // The API key must be obtained exclusively from the environment variable process.env.API_KEY
-    const key = process.env.API_KEY;
+    // The API key must be obtained exclusively from the environment variable VITE_GEMINI_API_KEY
+    const key = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
     if (!key) {
-        throw new Error("MISSING API KEY: process.env.API_KEY is not set.");
+        throw new Error("MISSING API KEY: VITE_GEMINI_API_KEY is not set.");
     }
     return new GoogleGenAI({ apiKey: key });
 }
