@@ -50,18 +50,33 @@ const WebcamRecorder = forwardRef<WebcamRef, WebcamRecorderProps>(({ onDataAvail
                     height: { ideal: 720 },
                     frameRate: { ideal: 15 }
                 }, 
-                audio: true 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    sampleRate: 44100
+                }
             });
             
-            // Attempt to mix in microphone (for Interviewer's voice or fallback)
+            // Always use system audio from screen share
+            currentStream = displayMedia;
+            
+            // Try to add microphone audio as well for better quality
             try {
-                const micMedia = await navigator.mediaDevices.getUserMedia({ audio: true });
-                // Combine video from screen and audio from mic (or mixed)
+                const micMedia = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 44100
+                    }
+                });
+                // Combine video from screen and audio from both sources
                 currentStream = new MediaStream([
                     ...displayMedia.getVideoTracks(),
-                    ...micMedia.getAudioTracks() 
+                    ...displayMedia.getAudioTracks(),
+                    ...micMedia.getAudioTracks()
                 ]);
             } catch (micErr) {
+                console.warn("Microphone access failed, using system audio only", micErr);
                 // If mic fails, just use system audio
                 currentStream = displayMedia;
             }

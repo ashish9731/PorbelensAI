@@ -92,7 +92,7 @@ export const generateFastNextQuestion = async (
 }> => {
   try {
       const ai = getAI();
-      const model = "gemini-2.5-flash"; // FASTEST model for real-time interaction
+      const model = "gemini-2.0-flash"; // Even faster model for real-time interaction
 
       const lastTurn = history[history.length - 1];
       const lastQuestion = lastTurn ? lastTurn.question : "Tell me about yourself in brief.";
@@ -123,7 +123,7 @@ export const generateFastNextQuestion = async (
            * If answer quality is "Expert", ask advanced questions
          - If candidate said they don't know, ask foundational questions on the topic
 
-      OUTPUT JSON ONLY.
+      OUTPUT JSON ONLY. Keep response concise and fast.
       `;
 
       const parts: any[] = [{ text: prompt }];
@@ -294,7 +294,7 @@ export const analyzeResponseDeeply = async (
 ): Promise<AnalysisMetrics> => {
   try {
       const ai = getAI();
-      const model = "gemini-2.5-flash"; // Use Flash for video analysis (multimodal optimized)
+      const model = "gemini-2.0-flash"; // Use faster Flash model for video analysis
 
       if (!transcript || transcript.includes("(No audible response detected)") || transcript.includes("(Error")) {
            return {
@@ -319,7 +319,7 @@ export const analyzeResponseDeeply = async (
       3. Analyze Content against Resume/JD.
       4. VERIFY transcription accuracy - if transcription seems incomplete or missing, flag it.
       5. PROVIDE correct answer or explanation for the question to help interviewer evaluate candidate.
-      OUTPUT JSON ONLY.
+      OUTPUT JSON ONLY. Keep response concise and fast.
       `;
 
       const parts: any[] = [{ text: prompt }];

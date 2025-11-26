@@ -128,7 +128,7 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
           return;
       }
 
-      // Create Turn
+      // Create Turn with correct answer placeholder
       const newTurn: InterviewTurn = {
         id: thisTurnId,
         question: questionAsked,
@@ -140,19 +140,20 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
             technicalAccuracy: 0, communicationClarity: 0, relevance: 0, sentiment: 'Neutral', 
             deceptionProbability: 0, paceOfSpeech: 'Normal', starMethodAdherence: false,
             keySkillsDemonstrated: [], improvementAreas: [],
-            integrity: { status: 'Clean' }, answerQuality: fastResult.answerQuality
+            integrity: { status: 'Clean' }, answerQuality: fastResult.answerQuality,
+            correctAnswer: 'Analyzing candidate response...'
         }
       };
 
       setHistory(prev => [...prev, newTurn]);
       
-      // Buffer the next question instead of setting it immediately
+      // Set the next question immediately
       setNextQuestionData({ text: fastResult.nextQuestion, complexity: fastResult.nextComplexity });
       
       // Reset Code Buffer if submitted
       if (codeSubmitted) setCodeBuffer('');
       
-      // PHASE 2: Deep Analysis
+      // PHASE 2: Deep Analysis (in background)
       setProcessingState('ANALYZING_BACKGROUND');
       
       analyzeResponseDeeply(context, fastResult.transcript, mediaBase64, frameBase64, questionAsked, codeSubmitted)
@@ -181,7 +182,7 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
                     improvementAreas: ["Transcription failed"],
                     integrity: { status: "Clean" }, 
                     answerQuality: "Intermediate",
-                    correctAnswer: "Analysis failed, showing candidate response for manual evaluation."
+                    correctAnswer: "Analysis failed. Please review the candidate's response manually."
                 }}
                 : turn
             ));

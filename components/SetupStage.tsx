@@ -118,7 +118,8 @@ const SetupStage: React.FC<SetupStageProps> = ({ setContext, setStage, darkMode,
         };
 
         setBatches(prev => [newBatch, ...prev]);
-        processBatchAnalysis(newBatch.id, candidates, jdData);
+        // Skip resume analysis for faster processing
+        // processBatchAnalysis(newBatch.id, candidates, jdData);
 
         setJobTitle('');
         setJdFile(null);
