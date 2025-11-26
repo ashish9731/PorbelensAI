@@ -11,7 +11,7 @@ const firebaseConfig = {
   measurementId: "G-PLMRRE62R3"
 };
 
-// Initialize Firebase
+// Initialize Firebase (Modular SDK)
 const app = initializeApp(firebaseConfig);
 
 // Export Auth and Providers

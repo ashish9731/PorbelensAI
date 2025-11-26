@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { AppStage, InterviewContextData, InterviewTurn, QuestionComplexity, CodingChallenge } from '../types';
 import WebcamRecorder, { WebcamRef } from './WebcamRecorder';
@@ -6,7 +5,7 @@ import { generateFastNextQuestion, analyzeResponseDeeply, generateCodingChalleng
 import { blobToBase64 } from '../utils';
 import { Icons } from '../constants';
 import { auth } from '../services/firebase';
-import { signOut } from 'firebase/auth';
+import { signOut } from "firebase/auth";
 
 interface InterviewStageProps {
   context: InterviewContextData;

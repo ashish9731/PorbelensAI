@@ -1,30 +1,21 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { InterviewContextData, InterviewTurn, AnalysisMetrics, ReportData, AnswerQuality, QuestionComplexity, CodeAnalysisData, CodingChallenge, PreInterviewAnalysis, FileData } from "../types";
-import { API_KEY as ENV_KEY } from '../env';
-
-export const checkApiKey = () => {
-  const key = process.env.API_KEY || ENV_KEY;
-  if (!key || key.includes("PASTE_YOUR")) {
-    throw new Error("Invalid API Key. Please update env.ts with a valid Google Gemini API Key.");
-  }
-};
 
 const getAI = () => {
-    try {
-        checkApiKey();
-        const key = process.env.API_KEY || ENV_KEY;
-        return new GoogleGenAI({ apiKey: key });
-    } catch (e: any) {
-        throw new Error(e.message);
+    // The API key must be obtained exclusively from the environment variable process.env.API_KEY
+    const key = process.env.API_KEY;
+
+    if (!key) {
+        throw new Error("MISSING API KEY: process.env.API_KEY is not set.");
     }
+    return new GoogleGenAI({ apiKey: key });
 }
 
 // Helper to attach file parts correctly
 const attachFilePart = (fileData: any, label: string) => {
     if (fileData.base64) {
         return [
-            { text: `[SYSTEM: The user has uploaded a file for ${label}. Use this context strictly. Do not ignore.]` },
+            { text: `[SYSTEM: The user has uploaded a file for ${label}. Use this context strictly.]` },
             { inlineData: { mimeType: fileData.type, data: fileData.base64 } }
         ];
     } else if (fileData.textContent) {
@@ -37,7 +28,7 @@ const attachFilePart = (fileData: any, label: string) => {
 export const analyzeResumeMatch = async (resume: FileData, jd: FileData): Promise<PreInterviewAnalysis> => {
     try {
         const ai = getAI();
-        const model = "gemini-2.5-flash"; 
+        const model = "gemini-2.5-flash"; // Stable model for document analysis
 
         const prompt = `
         ROLE: Expert Technical Recruiter & ATS System.
@@ -77,7 +68,7 @@ export const analyzeResumeMatch = async (resume: FileData, jd: FileData): Promis
     } catch (e: any) {
         console.error("Resume Analysis Failed", e);
         if (e.message.includes("403") || e.status === 403) {
-            throw new Error("Your API key was reported as leaked/invalid. Please use a new API key.");
+            throw new Error("API KEY ERROR: Your key is invalid or blocked.");
         }
         return {
             resumeScore: 0,
@@ -101,7 +92,7 @@ export const generateFastNextQuestion = async (
 }> => {
   try {
       const ai = getAI();
-      const model = "gemini-2.5-flash"; 
+      const model = "gemini-2.5-flash"; // FASTEST model for real-time interaction
 
       const lastTurn = history[history.length - 1];
       const lastQuestion = lastTurn ? lastTurn.question : "Tell me about yourself in brief.";
@@ -116,15 +107,13 @@ export const generateFastNextQuestion = async (
       - Difficulty Level: ${lastComplexity}
       
       TASK:
-      1. LISTEN to the attached video/audio clip carefully.
-      2. TRANSCRIBE the candidate's response word-for-word. 
-         - CRITICAL: If the audio is silent, unintelligible, or empty, output exactly: "(No audible response detected)".
-         - DO NOT INVENT TEXT. DO NOT HALLUCINATE A RESPONSE.
-      3. EVALUATE the answer quality (Basic, Intermediate, or Expert).
+      1. LISTEN to the attached video/audio clip.
+      2. TRANSCRIBE the candidate's response.
+         - If silent or empty, output exactly: "(No audible response detected)".
+      3. EVALUATE the answer quality.
       4. GENERATE the Next Question:
-         - The next question must be logically connected to the candidate's last answer.
-         - If they failed to answer, ask them to repeat or clarify.
-         - Use the Job Description, Resume, AND Knowledge Base (provided in context) to guide the topic.
+         - Must follow-up on their answer.
+         - Use the JD and Resume context.
 
       OUTPUT JSON ONLY.
       `;
@@ -133,8 +122,14 @@ export const generateFastNextQuestion = async (
       
       if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
       if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
-      if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Company Knowledge Base"));
       
+      if (context.knowledgeBase && context.knowledgeBase.length > 0) {
+          context.knowledgeBase.forEach((kb, index) => {
+              parts.push(...attachFilePart(kb, `Company Knowledge Base (Part ${index + 1})`));
+          });
+      }
+      
+      // Attach Audio/Video
       parts.push({ inlineData: { mimeType: "video/webm", data: mediaBase64 } });
 
       const response = await ai.models.generateContent({
@@ -161,14 +156,14 @@ export const generateFastNextQuestion = async (
       }
       
       if (!json.nextQuestion) {
-          throw new Error("AI failed to generate a follow-up question.");
+          json.nextQuestion = "Could you elaborate on that further?";
       }
 
       return json;
   } catch (error: any) {
     console.error("Fast Gen Error:", error);
     if (error.message.includes("403") || error.status === 403) {
-        throw new Error("Your API key was reported as leaked/invalid. Please use a new API key.");
+        throw new Error("API KEY ERROR: Key blocked/invalid.");
     }
     throw error;
   }
@@ -181,27 +176,24 @@ export const analyzeCodeSnippet = async (
 ): Promise<CodeAnalysisData> => {
     try {
         const ai = getAI();
-        const model = "gemini-3-pro-preview";
+        const model = "gemini-2.5-flash"; // Use Flash for code analysis speed
 
         const prompt = `
-        ROLE: Expert Code Reviewer & Algorithm Analyst.
-        TASK: Analyze the following code snippet provided by a candidate during an interview.
+        ROLE: Expert Code Reviewer.
+        TASK: Analyze this code snippet.
         
         CODE:
         ${code}
-        
-        REQUIREMENTS:
-        1. Determine Time & Space Complexity (Big O).
-        2. Identify potential bugs or edge cases.
-        3. Suggest improvements.
-        4. Score the code quality (0-100).
-        5. Check against uploaded Knowledge Base standards if applicable.
         
         OUTPUT JSON ONLY.
         `;
 
         const parts: any[] = [{ text: prompt }];
-        if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Coding Standards / Knowledge Base"));
+        if (context.knowledgeBase && context.knowledgeBase.length > 0) {
+            context.knowledgeBase.forEach((kb, index) => {
+                parts.push(...attachFilePart(kb, `Coding Standards / Knowledge Base (Part ${index + 1})`));
+            });
+        }
 
         const response = await ai.models.generateContent({
             model,
@@ -224,9 +216,6 @@ export const analyzeCodeSnippet = async (
         return JSON.parse(response.text || "{}");
     } catch (e: any) {
         console.error("Code Analysis Error", e);
-        if (e.message.includes("403") || e.status === 403) {
-            throw new Error("API Key Error during Code Analysis.");
-        }
         return {
             language: "Unknown", timeComplexity: "?", spaceComplexity: "?",
             bugs: ["Analysis Failed"], suggestions: [], score: 0
@@ -238,26 +227,19 @@ export const analyzeCodeSnippet = async (
 export const generateCodingChallenge = async (context: InterviewContextData): Promise<CodingChallenge> => {
   try {
       const ai = getAI();
-      const model = "gemini-3-pro-preview";
+      const model = "gemini-3-pro-preview"; // Use Pro for creative task generation
 
       const prompt = `
-      ROLE: Technical Lead / Hiring Manager.
-      TASK: Create a relevant Coding Challenge for the candidate based on their profile, the JD, and Company Knowledge Base.
-      
-      GOAL:
-      - The problem should test core skills required in the Job Description.
-      - It should align with the technical stack mentioned in the Knowledge Base (if provided).
-      - It should be solvable in 10-15 minutes.
-      - Provide a "Solution Key" for the non-technical interviewer.
-      
+      ROLE: Hiring Manager.
+      TASK: Create a Coding Challenge based on the JD and Resume.
+      GOAL: Solvable in 10 mins. Include a solution key.
       OUTPUT JSON ONLY.
       `;
 
       const parts: any[] = [{ text: prompt }];
       if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
       if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
-      if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Company Knowledge Base"));
-
+      
       const response = await ai.models.generateContent({
           model,
           contents: { parts },
@@ -279,17 +261,16 @@ export const generateCodingChallenge = async (context: InterviewContextData): Pr
       return JSON.parse(response.text || "{}");
   } catch (error: any) {
     console.error("Challenge Gen Error", error);
-    if (error.message.includes("403") || error.status === 403) {
-        throw new Error("Your API key was reported as leaked/invalid. Please use a new API key.");
+    if (error.message.includes("403")) {
+        throw new Error("API KEY ERROR: Key blocked/invalid.");
     }
-    // STRICT MODE: Return explicit error object
     return {
-        title: "Error Generating Challenge",
-        description: "Could not generate challenge due to an API error.",
+        title: "Error Generating Challenge", 
+        description: "API Access Failed. Please check your API key.", 
         difficulty: "Intermediate",
-        solutionCode: "// API Error",
-        expectedTimeComplexity: "N/A",
-        keyConcepts: ["API Error"]
+        solutionCode: "", 
+        expectedTimeComplexity: "", 
+        keyConcepts: []
     };
   }
 };
@@ -305,7 +286,7 @@ export const analyzeResponseDeeply = async (
 ): Promise<AnalysisMetrics> => {
   try {
       const ai = getAI();
-      const model = "gemini-3-pro-preview"; 
+      const model = "gemini-2.5-flash"; // Use Flash for video analysis (multimodal optimized)
 
       if (!transcript || transcript.includes("(No audible response detected)") || transcript.includes("(Error")) {
            return {
@@ -322,33 +303,19 @@ export const analyzeResponseDeeply = async (
       }
 
       const prompt = `
-      ROLE: You are 'ProbeLensAI' Forensic Analyst.
-      
-      INPUT DATA:
-      - Question Asked: "${previousQuestion}"
-      - Candidate Transcript: "${transcript}"
-      ${submittedCode ? `- Code Submitted: Yes (See Separate Analysis)` : ''}
-      
+      ROLE: Forensic Analyst.
+      INPUT: Question: "${previousQuestion}". Transcript: "${transcript}".
       TASK:
-      1. INTEGRITY CHECK (Cheating Detection):
-         - Check the attached video frame: Are eyes darting? Is a phone visible?
-         - Check the audio: Are there typing sounds? Is the voice robotic?
-      
-      2. CONTENT ANALYSIS:
-         - Compare the transcript against the Candidate's Resume and Job Description and Knowledge Base. Does it align?
-         - Verify technical accuracy (0-100).
-         - Assess sentiment (Confidence vs Anxiety).
-         - Identify Key Skills mentioned.
-
+      1. Check Video Frame for cheating (eyes off screen).
+      2. Check Audio for robotic voice/typing.
+      3. Analyze Content against Resume/JD.
       OUTPUT JSON ONLY.
       `;
 
       const parts: any[] = [{ text: prompt }];
-      
       if (context.resume) parts.push(...attachFilePart(context.resume, "Candidate Resume"));
       if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Description"));
-      if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Knowledge Base"));
-
+      
       parts.push({ inlineData: { mimeType: "video/webm", data: mediaBase64 } });
       parts.push({ inlineData: { mimeType: "image/jpeg", data: videoFrameBase64 } });
 
@@ -387,9 +354,6 @@ export const analyzeResponseDeeply = async (
 
   } catch (error: any) {
     console.error("Deep Analysis Error:", error);
-    if (error.message.includes("403") || error.status === 403) {
-        throw new Error("API Key Error during deep analysis.");
-    }
     return {
         technicalAccuracy: 0, communicationClarity: 0, relevance: 0, sentiment: "Neutral",
         deceptionProbability: 0, paceOfSpeech: "Normal", starMethodAdherence: false,
@@ -406,58 +370,24 @@ export const generateFinalReport = async (
 ): Promise<ReportData> => {
   try {
       const ai = getAI();
-      const model = "gemini-3-pro-preview";
+      const model = "gemini-3-pro-preview"; // Use Pro for high-quality report writing
 
       const validTurns = history.filter(t => 
-        t.transcript && 
-        t.transcript.length > 5 && 
-        !t.transcript.includes("(Audio transcription failed)") &&
+        t.transcript && t.transcript.length > 5 && 
         !t.transcript.includes("(No audible response detected)")
       );
 
       if (validTurns.length === 0) {
           return {
-            overallScore: 0,
-            integrityScore: 0,
-            skillDepthBreakdown: { basic: 0, intermediate: 0, expert: 0 },
-            categoryScores: {
-              subjectKnowledge: 0, behavioral: 0, functional: 0, 
-              nonFunctional: 0, communication: 0, technical: 0, coding: 0
-            },
-            summary: "Interview ended without any valid candidate conversation. No data to analyze.",
-            psychologicalProfile: "N/A",
-            recommendation: 'NO_HIRE',
-            turns: []
+            overallScore: 0, integrityScore: 0, skillDepthBreakdown: { basic: 0, intermediate: 0, expert: 0 },
+            categoryScores: { subjectKnowledge: 0, behavioral: 0, functional: 0, nonFunctional: 0, communication: 0, technical: 0, coding: 0 },
+            summary: "No interview data collected.", psychologicalProfile: "N/A", recommendation: 'NO_HIRE', turns: []
           };
       }
 
-      const conversationLog = validTurns.map((t, i) => `
-        [Turn ${i+1} | Level: ${t.questionComplexity}]
-        Q: ${t.question}
-        A: ${t.transcript}
-        ${t.submittedCode ? `[CODE SUBMITTED]: ${t.submittedCode.substring(0, 200)}...` : ''}
-        [Metrics] Accuracy: ${t.analysis.technicalAccuracy}, Integrity: ${t.analysis.integrity.status}, Quality: ${t.analysis.answerQuality}
-      `).join("\n");
-
-      const prompt = `
-        Generate the "ProbeLensAI Final Decision Report" for ${context.candidateName}.
-        
-        INPUT: Full Interview Log below.
-        ${conversationLog}
-        
-        TASKS:
-        1. Calculate scores based STRICTLY on the conversation log above.
-        2. Consider CODE QUALITY if code was submitted.
-        3. Write a decisive summary.
-        
-        OUTPUT JSON ONLY.
-        `;
-
+      const prompt = `Generate Final Report for ${context.candidateName}. Based on this logs: ${JSON.stringify(validTurns.map(t=>({q:t.question, a:t.transcript, score:t.analysis.technicalAccuracy})))}. OUTPUT JSON.`;
+      
       const parts: any[] = [{ text: prompt }];
-
-      if (context.resume) parts.push(...attachFilePart(context.resume, "Resume Reference"));
-      if (context.jobDescription) parts.push(...attachFilePart(context.jobDescription, "Job Requirements"));
-      if (context.knowledgeBase) parts.push(...attachFilePart(context.knowledgeBase, "Knowledge Base"));
 
       const response = await ai.models.generateContent({
         model,
@@ -469,26 +399,8 @@ export const generateFinalReport = async (
             properties: {
               overallScore: { type: Type.NUMBER },
               integrityScore: { type: Type.NUMBER },
-              skillDepthBreakdown: {
-                type: Type.OBJECT,
-                properties: {
-                    basic: { type: Type.NUMBER },
-                    intermediate: { type: Type.NUMBER },
-                    expert: { type: Type.NUMBER }
-                }
-              },
-              categoryScores: {
-                type: Type.OBJECT,
-                properties: {
-                  subjectKnowledge: { type: Type.NUMBER },
-                  behavioral: { type: Type.NUMBER },
-                  functional: { type: Type.NUMBER },
-                  nonFunctional: { type: Type.NUMBER },
-                  communication: { type: Type.NUMBER },
-                  technical: { type: Type.NUMBER },
-                  coding: { type: Type.NUMBER }
-                }
-              },
+              skillDepthBreakdown: { type: Type.OBJECT, properties: { basic: { type: Type.NUMBER }, intermediate: { type: Type.NUMBER }, expert: { type: Type.NUMBER } } },
+              categoryScores: { type: Type.OBJECT, properties: { subjectKnowledge: { type: Type.NUMBER }, behavioral: { type: Type.NUMBER }, functional: { type: Type.NUMBER }, nonFunctional: { type: Type.NUMBER }, communication: { type: Type.NUMBER }, technical: { type: Type.NUMBER }, coding: { type: Type.NUMBER } } },
               summary: { type: Type.STRING },
               psychologicalProfile: { type: Type.STRING },
               recommendation: { type: Type.STRING, enum: ['HIRE', 'NO_HIRE', 'STRONG_HIRE', 'MAYBE'] }
@@ -497,13 +409,9 @@ export const generateFinalReport = async (
         }
       });
 
-      const json = JSON.parse(response.text || "{}");
-      return { ...json, turns: validTurns };
+      return { ...JSON.parse(response.text || "{}"), turns: validTurns };
   } catch (error: any) {
-      console.error("Gemini API Error in Report:", error);
-      if (error.message.includes("403") || error.status === 403) {
-        throw new Error("Your API key was reported as leaked/invalid. Please use a new API key.");
-      }
+      console.error("Report Gen Error:", error);
       throw error;
   }
 };

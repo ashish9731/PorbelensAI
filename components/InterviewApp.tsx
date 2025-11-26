@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppStage, InterviewContextData, InterviewTurn } from '../types';
 import Home from './Home';
@@ -6,7 +5,7 @@ import SetupStage from './SetupStage';
 import InterviewStage from './InterviewStage';
 import ReportStage from './ReportStage';
 import { auth } from '../services/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from "firebase/auth";
 
 const InterviewApp: React.FC = () => {
   const [stage, setStage] = useState<AppStage>(AppStage.HOME);

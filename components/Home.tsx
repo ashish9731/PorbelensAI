@@ -1,9 +1,13 @@
-
 import React, { useState, useEffect } from 'react';
 import { Icons } from '../constants';
 import { AppStage } from '../types';
 import { auth, googleProvider } from '../services/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup, 
+  updateProfile 
+} from "firebase/auth";
 
 interface HomeProps {
   setStage: (stage: AppStage) => void;
@@ -40,9 +44,11 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
             throw new Error("Please provide your Name and Company.");
         }
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, {
-            displayName: `${fullName}|${companyName}`
-        });
+        if (userCredential.user) {
+            await updateProfile(userCredential.user, {
+                displayName: `${fullName}|${companyName}`
+            });
+        }
       }
       setStage(AppStage.SETUP);
     } catch (err: any) {
@@ -269,7 +275,7 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
                     <span>Continue with Google</span>
                   </button>
             </div>
-
+            
             <div className="relative mb-6">
                 <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-slate-200 dark:border-slate-700"></div>
@@ -278,6 +284,18 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
                     <span className="px-2 bg-white dark:bg-slate-900 text-slate-500">Or continue with email</span>
                 </div>
             </div>
+
+            {/* ERROR DISPLAY FOR UNAUTHORIZED DOMAIN */}
+            {error && error.includes("DOMAIN BLOCKED") && (
+                <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-sm text-yellow-800 dark:text-yellow-200">
+                    <p className="font-bold flex items-center"><Icons.AlertCircle className="w-4 h-4 mr-2"/> Action Required</p>
+                    <p className="mt-1">Firebase is blocking this domain.</p>
+                    <div className="mt-2 bg-slate-100 dark:bg-black p-2 rounded text-xs font-mono break-all select-all">
+                        {window.location.hostname}
+                    </div>
+                    <p className="mt-2 text-xs">Copy the above domain and add it to Firebase Console &gt; Authentication &gt; Settings &gt; Authorized Domains.</p>
+                </div>
+            )}
             
             <form onSubmit={handleAuth} className="space-y-4">
               
@@ -332,7 +350,7 @@ const Home: React.FC<HomeProps> = ({ setStage, darkMode, toggleTheme }) => {
                 />
               </div>
 
-              {error && <p className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-900 text-center font-bold">{error}</p>}
+              {error && !error.includes("DOMAIN BLOCKED") && <p className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-900 text-center font-bold">{error}</p>}
               
               <button 
                 type="submit" 

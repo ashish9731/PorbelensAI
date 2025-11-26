@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { AppStage, InterviewContextData, InterviewTurn, ReportData } from '../types';
 import { generateFinalReport } from '../services/geminiService';
@@ -6,7 +5,7 @@ import { generatePDF } from '../services/pdfService';
 import { Icons } from '../constants';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import { auth } from '../services/firebase';
-import { signOut } from 'firebase/auth';
+import { signOut } from "firebase/auth";
 
 interface ReportStageProps {
   history: InterviewTurn[];
@@ -19,21 +18,25 @@ interface ReportStageProps {
 const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, darkMode, toggleTheme }) => {
   const [report, setReport] = useState<ReportData | null>(null);
   const [exportStatus, setExportStatus] = useState<'IDLE' | 'SUCCESS'>('IDLE');
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchReport = async () => {
+    try {
+      setError(null);
+      const data = await generateFinalReport(history, context);
+      setReport(data);
+    } catch (e: any) {
+      console.error("Failed to generate report", e);
+      setError(e.message || "Failed to generate final report. Please try again.");
+    }
+  };
 
   useEffect(() => {
-    const fetchReport = async () => {
-      try {
-        const data = await generateFinalReport(history, context);
-        setReport(data);
-      } catch (e) {
-        console.error("Failed to generate report", e);
-      }
-    };
     fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleATSExport = () => {
+  const handleATSExport = (isEmergency: boolean = false) => {
       // REAL EXPORT: Generate a JSON blob of the full candidate profile and download it
       try {
           const exportData = {
@@ -41,9 +44,10 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
                   candidateName: context.candidateName,
                   jobRole: context.jobDescription?.name || "Unknown Role",
                   timestamp: new Date().toISOString(),
-                  exporter: "ProbeLensAI v2.5"
+                  exporter: "ProbeLensAI v2.5",
+                  status: isEmergency ? "RAW_LOGS_ONLY" : "FULL_REPORT"
               },
-              scores: report,
+              scores: report || { note: "Report generation failed" },
               transcript_log: history.map(h => ({
                   question: h.question,
                   answer: h.transcript,
@@ -55,14 +59,16 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `${context.candidateName.replace(/\s+/g, '_')}_ProbeLens_Export.json`;
+          a.download = `${context.candidateName.replace(/\s+/g, '_')}_ProbeLens_${isEmergency ? 'RawLog' : 'Export'}.json`;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
 
-          setExportStatus('SUCCESS');
-          setTimeout(() => setExportStatus('IDLE'), 3000);
+          if (!isEmergency) {
+            setExportStatus('SUCCESS');
+            setTimeout(() => setExportStatus('IDLE'), 3000);
+          }
       } catch (e) {
           console.error("Export failed", e);
           alert("Failed to export data.");
@@ -74,6 +80,41 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
           setStage(AppStage.HOME);
       });
   };
+
+  // ERROR STATE
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center transition-colors p-6 text-center">
+        <div className="bg-red-100 dark:bg-red-900/20 p-6 rounded-full mb-6">
+             <Icons.AlertCircle className="w-16 h-16 text-red-500 dark:text-red-400" />
+        </div>
+        <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Analysis Generation Failed</h2>
+        <p className="text-slate-600 dark:text-slate-300 max-w-md mb-8">
+            {error}
+        </p>
+        <div className="flex flex-col space-y-3 w-full max-w-xs">
+             <button 
+                onClick={fetchReport}
+                className="w-full px-8 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-bold transition flex items-center justify-center"
+            >
+                <Icons.RefreshCw className="w-5 h-5 mr-2" /> Retry Analysis
+            </button>
+             <button 
+                onClick={() => handleATSExport(true)}
+                className="w-full px-8 py-3 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition flex items-center justify-center"
+            >
+                <Icons.Download className="w-5 h-5 mr-2" /> Download Raw Logs
+            </button>
+            <button 
+                onClick={() => setStage(AppStage.HOME)}
+                className="w-full text-slate-500 hover:underline text-sm"
+            >
+                Return to Dashboard
+            </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!report) {
     return (
@@ -178,7 +219,7 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
                   {darkMode ? <Icons.Sun className="w-5 h-5"/> : <Icons.Moon className="w-5 h-5"/>}
                 </button>
                 <button 
-                  onClick={handleATSExport}
+                  onClick={() => handleATSExport(false)}
                   className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
                 >
                     {exportStatus === 'SUCCESS' ? <Icons.CheckCircle className="w-4 h-4 text-green-500" /> : <Icons.Upload className="w-4 h-4" />}

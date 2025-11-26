@@ -1,4 +1,4 @@
-
+import React from 'react';
 
 export enum AppStage {
   HOME = 'HOME',
@@ -17,7 +17,7 @@ export interface FileData {
 export interface InterviewContextData {
   jobDescription: FileData | null;
   resume: FileData | null;
-  knowledgeBase: FileData | null;
+  knowledgeBase: FileData[] | null;
   candidateName: string;
 }
 
@@ -41,7 +41,7 @@ export interface InterviewBatch {
   id: string;
   jobTitle: string;
   jobDescription: FileData;
-  knowledgeBase?: FileData;
+  knowledgeBase?: FileData[];
   candidates: CandidateProfile[];
   createdAt: number;
 }
