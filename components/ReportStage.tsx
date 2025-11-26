@@ -285,7 +285,15 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
                         </span>
                       </div>
                     </div>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 italic">"{turn.transcript.substring(0, 150)}..."</p>
+                    <div className="mt-2">
+                      <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 italic">"{turn.transcript.substring(0, 150)}..."</p>
+                      {turn.analysis.correctAnswer && (
+                        <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
+                          <p className="text-[10px] font-bold text-green-700 dark:text-green-300 mb-1">CORRECT ANSWER:</p>
+                          <p className="text-xs text-green-600 dark:text-green-400">{turn.analysis.correctAnswer.substring(0, 200)}{turn.analysis.correctAnswer.length > 200 ? '...' : ''}</p>
+                        </div>
+                      )}
+                    </div>
                     <div className="mt-2 flex gap-2 flex-wrap items-center">
                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border 
                            ${turn.analysis.answerQuality === 'Expert' ? 'bg-purple-100 text-purple-700 border-purple-200' : 

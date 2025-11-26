@@ -35,6 +35,22 @@ export const generatePDF = (report: ReportData, context: InterviewContextData) =
   
   let yPos = 56 + (splitSummary.length * 5) + 10;
 
+  // Psychological Profile
+  doc.setFontSize(14);
+  doc.setTextColor(40);
+  doc.text("Psychological Profile", 14, yPos);
+  doc.setFontSize(10);
+  doc.setTextColor(80);
+  const splitProfile = doc.splitTextToSize(report.psychologicalProfile, 180);
+  doc.text(splitProfile, 14, yPos + 6);
+  yPos = yPos + 6 + (splitProfile.length * 5) + 5;
+
+  // Integrity Score
+  doc.setFontSize(12);
+  doc.setTextColor(40);
+  doc.text(`Integrity Score: ${report.integrityScore}%`, 14, yPos);
+  yPos = yPos + 10;
+
   // Category Scores Table
   autoTable(doc, {
     startY: yPos,
@@ -46,9 +62,29 @@ export const generatePDF = (report: ReportData, context: InterviewContextData) =
       ['Functional Skills', report.categoryScores.functional],
       ['Non-Functional Skills', report.categoryScores.nonFunctional],
       ['Communication', report.categoryScores.communication],
+      ['Coding', report.categoryScores.coding],
     ],
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42] }
+  });
+
+  // @ts-ignore
+  yPos = doc.lastAutoTable.finalY + 15;
+
+  // Skill Depth Breakdown
+  doc.setFontSize(14);
+  doc.setTextColor(40);
+  doc.text("Skill Depth Analysis", 14, yPos);
+  
+  autoTable(doc, {
+    startY: yPos + 6,
+    head: [['Skill Level', 'Count']],
+    body: [
+      ['Basic', report.skillDepthBreakdown.basic],
+      ['Intermediate', report.skillDepthBreakdown.intermediate],
+      ['Expert', report.skillDepthBreakdown.expert],
+    ],
+    theme: 'striped'
   });
 
   // @ts-ignore
@@ -61,20 +97,28 @@ export const generatePDF = (report: ReportData, context: InterviewContextData) =
   const rows = report.turns.map((turn, index) => [
     `Q${index + 1}`,
     turn.question,
+    turn.questionComplexity,
     turn.transcript.substring(0, 100) + "...",
+    turn.analysis.correctAnswer ? turn.analysis.correctAnswer.substring(0, 100) + "..." : "N/A",
     `${turn.analysis.technicalAccuracy}%`,
+    turn.analysis.answerQuality,
     turn.analysis.sentiment
   ]);
 
   autoTable(doc, {
     startY: yPos + 6,
-    head: [['#', 'Question', 'Answer Snippet', 'Accuracy', 'Sentiment']],
+    head: [['#', 'Question', 'Level', 'Candidate Answer', 'Correct Answer', 'Accuracy', 'Quality', 'Sentiment']],
     body: rows,
     theme: 'striped',
-    styles: { fontSize: 8 },
+    styles: { fontSize: 6 },
     columnStyles: {
-      1: { cellWidth: 60 },
-      2: { cellWidth: 60 }
+      1: { cellWidth: 30 },
+      2: { cellWidth: 25 },
+      3: { cellWidth: 40 },
+      4: { cellWidth: 40 },
+      5: { cellWidth: 15 },
+      6: { cellWidth: 15 },
+      7: { cellWidth: 15 }
     }
   });
 

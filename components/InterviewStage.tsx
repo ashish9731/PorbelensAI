@@ -166,12 +166,33 @@ const InterviewStage: React.FC<InterviewStageProps> = ({ context, setHistory, hi
         })
         .catch(err => {
             console.error("Background Analysis Failed", err);
+            // Update the turn with fallback analysis data
+            setHistory(prev => prev.map(turn => 
+                turn.id === thisTurnId 
+                ? { ...turn, analysis: {
+                    technicalAccuracy: 50, 
+                    communicationClarity: 50, 
+                    relevance: 50, 
+                    sentiment: "Neutral",
+                    deceptionProbability: 0, 
+                    paceOfSpeech: "Normal", 
+                    starMethodAdherence: false,
+                    keySkillsDemonstrated: ["Communication"], 
+                    improvementAreas: ["Transcription failed"],
+                    integrity: { status: "Clean" }, 
+                    answerQuality: "Intermediate",
+                    correctAnswer: "Analysis failed, showing candidate response for manual evaluation."
+                }}
+                : turn
+            ));
             setProcessingState('IDLE');
         });
       
     } catch (err: any) {
       console.error("Critical Failure in Phase 1", err);
-      setErrorMsg(err.message || "Connection lost with AI service.");
+      setErrorMsg(err.message || "Connection lost with AI service. Please check your API key and internet connection.");
+      // Even if AI fails, we should still proceed with the interview
+      setNextQuestionData({ text: "Could you tell me more about your experience with this topic?", complexity: "Basic" });
       setProcessingState('IDLE');
     }
   };
