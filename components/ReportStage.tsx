@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AppStage, InterviewContextData, InterviewTurn, ReportData } from '../types';
 import { generateFinalReport } from '../services/geminiService';
 import { generatePDF } from '../services/pdfService';
+import { generateZIP } from '../services/zipService';
 import { Icons } from '../constants';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import { auth } from '../services/firebase';
@@ -231,6 +232,23 @@ const ReportStage: React.FC<ReportStageProps> = ({ history, context, setStage, d
                 >
                   <Icons.Download className="w-4 h-4" />
                   <span>Download PDF</span>
+                </button>
+                <button 
+                  onClick={async () => {
+                    const zipBlob = await generateZIP(report, context, history);
+                    const url = URL.createObjectURL(zipBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Interview_${context.candidateName.replace(/\s+/g, '_')}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-800 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+                >
+                  <Icons.Download className="w-4 h-4" />
+                  <span>Download ZIP</span>
                 </button>
              </div>
           </div>

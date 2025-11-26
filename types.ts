@@ -84,6 +84,7 @@ export interface AnalysisMetrics {
   };
   answerQuality: AnswerQuality;
   codeAnalysis?: CodeAnalysisData;
+  correctAnswer?: string; // Added for storing the correct answer
 }
 
 export interface InterviewTurn {
